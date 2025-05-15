@@ -1,0 +1,38 @@
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fix-deployment-orchestrator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fix-deployment-orchestrator
+  template:
+    metadata:
+      labels:
+        app: fix-deployment-orchestrator
+    spec:
+      containers:
+        - name: fix-deployment-orchestrator
+          image: fix-deployment-orchestrator:latest
+          ports:
+            - containerPort: 5000
+          volumeMounts:
+            - name: fix-files-volume
+              mountPath: /app/fixfiles
+            - name: ssh-keys-volume
+              mountPath: /root/.ssh
+            - name: inventory-volume
+              mountPath: /app/inventory
+      volumes:
+        - name: fix-files-volume
+          persistentVolumeClaim:
+            claimName: fix-files-pvc
+        - name: ssh-keys-volume
+          secret:
+            secretName: ssh-keys
+            defaultMode: 0600
+        - name: inventory-volume
+          configMap:
+            name: inventory-config
