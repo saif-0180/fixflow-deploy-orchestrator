@@ -13,14 +13,14 @@ import {
 import LogDisplay from '@/components/LogDisplay';
 import VMSelector from '@/components/VMSelector';
 
-const SystemctlOperations = () => {
+const SystemctlOperations: React.FC = () => {
   const { toast } = useToast();
   const [selectedService, setSelectedService] = useState<string>("");
-  const [selectedOperation, setSelectedOperation] = useState<string>("");
+  const [selectedOperation, setSelectedOperation] = useState<string>("status");
   const [selectedVMs, setSelectedVMs] = useState<string[]>([]);
   const [logs, setLogs] = useState<string[]>([]);
   const [deploymentId, setDeploymentId] = useState<string | null>(null);
-  const [vms, setVMs] = useState<string[]>([]);
+  const [vms, setVms] = useState<string[]>([]);
 
   // Fetch systemd services
   const { data: services = [] } = useQuery({
@@ -107,7 +107,7 @@ const SystemctlOperations = () => {
         const data = await response.json();
         // Extract VM names from the response
         const vmNames = data.map((vm: any) => vm.name);
-        setVMs(vmNames);
+        setVms(vmNames);
       } catch (error) {
         console.error('Error fetching VMs:', error);
       }
@@ -198,7 +198,7 @@ const SystemctlOperations = () => {
           </Button>
         </div>
 
-        <div>
+        <div className="space-y-4">
           <LogDisplay logs={logs} />
         </div>
       </div>

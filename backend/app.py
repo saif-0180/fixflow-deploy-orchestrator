@@ -1,4 +1,3 @@
-
 from flask import Flask, request, jsonify, send_from_directory, Response
 import os
 import json
@@ -602,7 +601,7 @@ def get_deployment_logs(deployment_id):
                     
                     time.sleep(1)
                 
-                # Send completion status - Fix the f-string syntax error here
+                # Send completion status - Fixed the f-string syntax issue
                 status_msg = f"Deployment {deployments[deployment_id]['status']}."
                 yield f"data: {json.dumps({'status': deployments[deployment_id]['status'], 'message': status_msg})}\n\n"
             

@@ -26,6 +26,7 @@ const FileOperations: React.FC = () => {
   const [logs, setLogs] = useState<string[]>([]);
   const [deploymentId, setDeploymentId] = useState<string | null>(null);
   const [shellCommand, setShellCommand] = useState<string>("");
+  const [vms, setVms] = useState<string[]>([]);
 
   // Fetch all FTs
   const { data: fts = [] } = useQuery({
@@ -208,7 +209,7 @@ const FileOperations: React.FC = () => {
         const data = await response.json();
         // Extract VM names from the response
         const vmNames = data.map((vm: any) => vm.name);
-        setVMs(vmNames);
+        setVms(vmNames);
       } catch (error) {
         console.error('Error fetching VMs:', error);
       }
