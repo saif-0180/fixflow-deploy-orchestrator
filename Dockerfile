@@ -24,7 +24,7 @@ WORKDIR /app
 COPY --from=frontend-build /app/dist /app/frontend/dist
 
 # Copy backend from backend stage
-COPY --from=backend-build /app/backend /app/backend
+COPY --from=backend-build /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY backend /app/backend
 
 # Install ansible
