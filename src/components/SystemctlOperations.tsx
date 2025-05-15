@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -21,6 +20,7 @@ const SystemctlOperations = () => {
   const [selectedVMs, setSelectedVMs] = useState<string[]>([]);
   const [logs, setLogs] = useState<string[]>([]);
   const [deploymentId, setDeploymentId] = useState<string | null>(null);
+  const [vms, setVMs] = useState<string[]>([]);
 
   // Fetch systemd services
   const { data: services = [] } = useQuery({
@@ -96,6 +96,26 @@ const SystemctlOperations = () => {
     };
   }, [deploymentId]);
 
+  // Add a useEffect to fetch VMs
+  useEffect(() => {
+    const fetchVMs = async () => {
+      try {
+        const response = await fetch('/api/vms');
+        if (!response.ok) {
+          throw new Error('Failed to fetch VMs');
+        }
+        const data = await response.json();
+        // Extract VM names from the response
+        const vmNames = data.map((vm: any) => vm.name);
+        setVMs(vmNames);
+      } catch (error) {
+        console.error('Error fetching VMs:', error);
+      }
+    };
+    
+    fetchVMs();
+  }, []);
+
   const handleExecute = () => {
     if (!selectedService) {
       toast({
@@ -130,7 +150,7 @@ const SystemctlOperations = () => {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-xl font-semibold text-[#F97316]">Systemctl Operations</h2>
+      <h2 className="text-2xl font-bold text-orange-500 mb-4">Systemd Service Management</h2>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="space-y-4">
@@ -164,6 +184,7 @@ const SystemctlOperations = () => {
           </div>
 
           <VMSelector 
+            vms={vms} 
             selectedVMs={selectedVMs} 
             setSelectedVMs={setSelectedVMs} 
           />

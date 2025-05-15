@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -198,6 +197,26 @@ const FileOperations: React.FC = () => {
     };
   }, [deploymentId]);
 
+  // Add a useEffect to fetch VMs
+  useEffect(() => {
+    const fetchVMs = async () => {
+      try {
+        const response = await fetch('/api/vms');
+        if (!response.ok) {
+          throw new Error('Failed to fetch VMs');
+        }
+        const data = await response.json();
+        // Extract VM names from the response
+        const vmNames = data.map((vm: any) => vm.name);
+        setVMs(vmNames);
+      } catch (error) {
+        console.error('Error fetching VMs:', error);
+      }
+    };
+    
+    fetchVMs();
+  }, []);
+
   const handleDeploy = () => {
     if (!selectedFt) {
       toast({
@@ -263,7 +282,7 @@ const FileOperations: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-xl font-semibold text-[#F97316]">File Deployment</h2>
+      <h2 className="text-2xl font-bold text-orange-500 mb-4">File Deployment</h2>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="space-y-4">
@@ -333,6 +352,7 @@ const FileOperations: React.FC = () => {
           </div>
 
           <VMSelector 
+            vms={vms} 
             selectedVMs={selectedVMs} 
             setSelectedVMs={setSelectedVMs} 
           />

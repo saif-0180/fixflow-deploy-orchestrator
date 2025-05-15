@@ -602,8 +602,9 @@ def get_deployment_logs(deployment_id):
                     
                     time.sleep(1)
                 
-                # Send completion status
-                yield f"data: {json.dumps({'status': deployments[deployment_id]['status'], 'message': f'Deployment {deployments[deployment_id]['status']}.'})}\n\n"
+                # Send completion status - Fix the f-string syntax error here
+                status_msg = f"Deployment {deployments[deployment_id]['status']}."
+                yield f"data: {json.dumps({'status': deployments[deployment_id]['status'], 'message': status_msg})}\n\n"
             
             return
         
