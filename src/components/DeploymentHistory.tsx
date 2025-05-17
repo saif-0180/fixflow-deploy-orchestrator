@@ -54,33 +54,33 @@ const DeploymentHistory = () => {
   
   return (
     <div className="space-y-6">
-      <h2 className="text-xl font-semibold text-[#F97316]">Deployment History</h2>
+      <h2 className="text-2xl font-bold text-[#2A4759] mb-4">Deployment History</h2>
 
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-        <div className="md:col-span-5 space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="space-y-4">
           <div>
-            <Label htmlFor="deployment-select">Select Deployment</Label>
+            <Label htmlFor="deployment-select" className="text-[#2A4759]">Select Deployment</Label>
             <Select value={selectedDeployment || ''} onValueChange={setSelectedDeployment}>
               <SelectTrigger 
                 id="deployment-select" 
-                className="bg-[#333333] border-gray-700"
+                className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]"
                 disabled={isLoading}
               >
-                <SelectValue placeholder="Select a deployment" />
+                <SelectValue placeholder="Select a deployment" className="text-[#2A4759]" />
               </SelectTrigger>
-              <SelectContent className="bg-[#333333] border-gray-700 max-h-80">
+              <SelectContent className="bg-[#DDDDDD] border-[#2A4759] text-[#2A4759] max-h-80">
                 {deployments.map((deployment: any) => (
                   <SelectItem 
                     key={deployment.id} 
                     value={deployment.id}
-                    className={`${deployment.status === 'success' ? 'border-l-2 border-green-500' : deployment.status === 'failed' ? 'border-l-2 border-red-500' : ''}`}
+                    className={`text-[#2A4759] ${deployment.status === 'success' ? 'border-l-2 border-green-500' : deployment.status === 'failed' ? 'border-l-2 border-red-500' : ''}`}
                   >
                     <div>
                       <span className="font-medium">{deployment.type}</span> - 
-                      <span className={`ml-2 ${deployment.status === 'success' ? 'text-green-500' : deployment.status === 'failed' ? 'text-red-500' : 'text-gray-400'}`}>
+                      <span className={`ml-2 ${deployment.status === 'success' ? 'text-green-500' : deployment.status === 'failed' ? 'text-red-500' : 'text-[#2A4759]'}`}>
                         {deployment.status}
                       </span>
-                      <div className="text-xs text-gray-400">{new Date(deployment.timestamp).toLocaleString()}</div>
+                      <div className="text-xs text-[#2A4759]">{new Date(deployment.timestamp).toLocaleString()}</div>
                     </div>
                   </SelectItem>
                 ))}
@@ -90,15 +90,15 @@ const DeploymentHistory = () => {
 
           <Button 
             onClick={handleViewLogs} 
-            className="bg-[#F97316] text-black hover:bg-orange-400"
+            className="bg-[#F79B72] text-[#2A4759] hover:bg-[#F79B72]/80"
             disabled={!selectedDeployment || isLoadingLogs}
           >
             {isLoadingLogs ? "Loading..." : "View Logs"}
           </Button>
         </div>
 
-        <div className="md:col-span-7">
-          <LogDisplay logs={deploymentLogs} height="500px" />
+        <div className="h-full">
+          <LogDisplay logs={deploymentLogs} height="400px" title="Deployment Logs" />
         </div>
       </div>
     </div>

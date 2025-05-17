@@ -156,30 +156,30 @@ const SystemctlOperations: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="space-y-4">
           <div>
-            <Label htmlFor="service-select">Select Service</Label>
+            <Label htmlFor="service-select" className="text-[#2A4759]">Select Service</Label>
             <Select value={selectedService} onValueChange={setSelectedService}>
-              <SelectTrigger id="service-select" className="bg-[#EEEEEE] border-[#2A4759]">
-                <SelectValue placeholder="Select a service" />
+              <SelectTrigger id="service-select" className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]">
+                <SelectValue placeholder="Select a service" className="text-[#2A4759]" />
               </SelectTrigger>
-              <SelectContent className="bg-[#EEEEEE] border-[#2A4759]">
+              <SelectContent className="bg-[#DDDDDD] border-[#2A4759] text-[#2A4759]">
                 {services.map((service: string) => (
-                  <SelectItem key={service} value={service}>{service}</SelectItem>
+                  <SelectItem key={service} value={service} className="text-[#2A4759]">{service}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
 
           <div>
-            <Label htmlFor="operation-select">Select Operation</Label>
+            <Label htmlFor="operation-select" className="text-[#2A4759]">Select Operation</Label>
             <Select value={selectedOperation} onValueChange={setSelectedOperation}>
-              <SelectTrigger id="operation-select" className="bg-[#EEEEEE] border-[#2A4759]">
-                <SelectValue placeholder="Select an operation" />
+              <SelectTrigger id="operation-select" className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]">
+                <SelectValue placeholder="Select an operation" className="text-[#2A4759]" />
               </SelectTrigger>
-              <SelectContent className="bg-[#EEEEEE] border-[#2A4759]">
-                <SelectItem value="status">status</SelectItem>
-                <SelectItem value="start">start</SelectItem>
-                <SelectItem value="stop">stop</SelectItem>
-                <SelectItem value="restart">restart</SelectItem>
+              <SelectContent className="bg-[#DDDDDD] border-[#2A4759] text-[#2A4759]">
+                <SelectItem value="status" className="text-[#2A4759]">status</SelectItem>
+                <SelectItem value="start" className="text-[#2A4759]">start</SelectItem>
+                <SelectItem value="stop" className="text-[#2A4759]">stop</SelectItem>
+                <SelectItem value="restart" className="text-[#2A4759]">restart</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -199,8 +199,8 @@ const SystemctlOperations: React.FC = () => {
           </Button>
         </div>
 
-        <div className="space-y-4">
-          <LogDisplay logs={logs} />
+        <div className="space-y-4 h-full">
+          <LogDisplay logs={logs} height="400px" title="Systemctl Operation Logs" />
         </div>
       </div>
     </div>

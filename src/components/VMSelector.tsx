@@ -36,7 +36,7 @@ const VMSelector: React.FC<VMSelectorProps> = ({ vms, selectedVMs, setSelectedVM
           checked={selectedVMs.length === vms.length && vms.length > 0}
           onCheckedChange={handleSelectAll}
         />
-        <Label htmlFor="select-all">Select All VMs</Label>
+        <Label htmlFor="select-all" className="text-[#2A4759]">Select All VMs</Label>
       </div>
       
       <div className="grid grid-cols-3 gap-2">
@@ -47,7 +47,7 @@ const VMSelector: React.FC<VMSelectorProps> = ({ vms, selectedVMs, setSelectedVM
               checked={selectedVMs.includes(vm)}
               onCheckedChange={() => handleToggleVM(vm)}
             />
-            <Label htmlFor={vm}>{vm}</Label>
+            <Label htmlFor={vm} className="text-[#2A4759]">{vm}</Label>
           </div>
         ))}
       </div>

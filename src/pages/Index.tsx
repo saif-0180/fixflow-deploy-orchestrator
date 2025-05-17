@@ -20,16 +20,16 @@ const Index = () => {
         <main className="container mx-auto px-4 py-6">
           <Tabs defaultValue="file" className="w-full">
             <TabsList className="grid w-full grid-cols-4 bg-[#DDDDDD] mb-6">
-              <TabsTrigger value="file" className="data-[state=active]:bg-[#F79B72] data-[state=active]:text-[#2A4759]">
+              <TabsTrigger value="file" className="data-[state=active]:bg-[#F79B72] data-[state=active]:text-[#2A4759] text-[#2A4759]">
                 File Operations
               </TabsTrigger>
-              <TabsTrigger value="sql" className="data-[state=active]:bg-[#F79B72] data-[state=active]:text-[#2A4759]">
+              <TabsTrigger value="sql" className="data-[state=active]:bg-[#F79B72] data-[state=active]:text-[#2A4759] text-[#2A4759]">
                 SQL Operations
               </TabsTrigger>
-              <TabsTrigger value="systemctl" className="data-[state=active]:bg-[#F79B72] data-[state=active]:text-[#2A4759]">
+              <TabsTrigger value="systemctl" className="data-[state=active]:bg-[#F79B72] data-[state=active]:text-[#2A4759] text-[#2A4759]">
                 Systemctl Operations
               </TabsTrigger>
-              <TabsTrigger value="history" className="data-[state=active]:bg-[#F79B72] data-[state=active]:text-[#2A4759]">
+              <TabsTrigger value="history" className="data-[state=active]:bg-[#F79B72] data-[state=active]:text-[#2A4759] text-[#2A4759]">
                 Deployment History
               </TabsTrigger>
             </TabsList>

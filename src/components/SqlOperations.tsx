@@ -171,7 +171,7 @@ const SqlOperations = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="space-y-4">
-          <div className="space-y-4 bg-[#EEEEEE] p-4 rounded-md">
+          <div className="space-y-4">
             <div>
               <Label htmlFor="sql-ft-select" className="text-[#2A4759]">Select FT</Label>
               <Select value={selectedFt} onValueChange={setSelectedFt}>
@@ -239,8 +239,8 @@ const SqlOperations = () => {
           </div>
         </div>
 
-        <div>
-          <LogDisplay logs={logs} height="300px" title="SQL Deployment Logs" />
+        <div className="h-full">
+          <LogDisplay logs={logs} height="400px" title="SQL Deployment Logs" />
         </div>
       </div>
     </div>

@@ -8,7 +8,7 @@ interface LogDisplayProps {
   title?: string;
 }
 
-const LogDisplay: React.FC<LogDisplayProps> = ({ logs, height = "300px", title = "Logs" }) => {
+const LogDisplay: React.FC<LogDisplayProps> = ({ logs, height = "400px", title = "Logs" }) => {
   const logEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
