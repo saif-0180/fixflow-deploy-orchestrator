@@ -327,58 +327,58 @@ const FileOperations: React.FC = () => {
             <h3 className="text-lg font-medium text-[#2A4759]">File Deployment</h3>
 
             <div>
-              <Label htmlFor="ft-select">Select FT</Label>
+              <Label htmlFor="ft-select" className="text-[#2A4759]">Select FT</Label>
               <Select value={selectedFt} onValueChange={setSelectedFt}>
-                <SelectTrigger id="ft-select" className="bg-[#EEEEEE] border-[#2A4759]">
-                  <SelectValue placeholder="Select an FT" />
+                <SelectTrigger id="ft-select" className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]">
+                  <SelectValue placeholder="Select an FT" className="text-[#2A4759]" />
                 </SelectTrigger>
-                <SelectContent className="bg-[#DDDDDD] border-[#2A4759]">
+                <SelectContent className="bg-[#DDDDDD] border-[#2A4759] text-[#2A4759]">
                   {fts.map((ft: string) => (
-                    <SelectItem key={ft} value={ft}>{ft}</SelectItem>
+                    <SelectItem key={ft} value={ft} className="text-[#2A4759]">{ft}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
 
             <div>
-              <Label htmlFor="file-select">Select File</Label>
+              <Label htmlFor="file-select" className="text-[#2A4759]">Select File</Label>
               <Select 
                 value={selectedFile} 
                 onValueChange={setSelectedFile}
                 disabled={!selectedFt}
               >
-                <SelectTrigger id="file-select" className="bg-[#EEEEEE] border-[#2A4759]">
-                  <SelectValue placeholder="Select a file" />
+                <SelectTrigger id="file-select" className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]">
+                  <SelectValue placeholder="Select a file" className="text-[#2A4759]" />
                 </SelectTrigger>
-                <SelectContent className="bg-[#DDDDDD] border-[#2A4759]">
+                <SelectContent className="bg-[#DDDDDD] border-[#2A4759] text-[#2A4759]">
                   {files.map((file: string) => (
-                    <SelectItem key={file} value={file}>{file}</SelectItem>
+                    <SelectItem key={file} value={file} className="text-[#2A4759]">{file}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
 
             <div>
-              <Label htmlFor="user-select">Select User</Label>
+              <Label htmlFor="user-select" className="text-[#2A4759]">Select User</Label>
               <Select value={selectedUser} onValueChange={setSelectedUser}>
-                <SelectTrigger id="user-select" className="bg-[#EEEEEE] border-[#2A4759]">
-                  <SelectValue placeholder="Select a user" />
+                <SelectTrigger id="user-select" className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]">
+                  <SelectValue placeholder="Select a user" className="text-[#2A4759]" />
                 </SelectTrigger>
-                <SelectContent className="bg-[#DDDDDD] border-[#2A4759]">
-                  <SelectItem value="infadm">infadm</SelectItem>
-                  <SelectItem value="abpwrk1">abpwrk1</SelectItem>
+                <SelectContent className="bg-[#DDDDDD] border-[#2A4759] text-[#2A4759]">
+                  <SelectItem value="infadm" className="text-[#2A4759]">infadm</SelectItem>
+                  <SelectItem value="abpwrk1" className="text-[#2A4759]">abpwrk1</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             <div>
-              <Label htmlFor="target-path">Target Path</Label>
+              <Label htmlFor="target-path" className="text-[#2A4759]">Target Path</Label>
               <Input 
                 id="target-path" 
                 value={targetPath} 
                 onChange={(e) => setTargetPath(e.target.value)}
                 placeholder="/opt/amdocs/abpwrk1/pbin/app" 
-                className="bg-[#EEEEEE] border-[#2A4759]"
+                className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]"
               />
             </div>
 
@@ -388,7 +388,7 @@ const FileOperations: React.FC = () => {
                 checked={useSudo} 
                 onCheckedChange={(checked) => setUseSudo(checked === true)}
               />
-              <Label htmlFor="sudo">Use sudo</Label>
+              <Label htmlFor="sudo" className="text-[#2A4759]">Use sudo</Label>
             </div>
 
             <VMSelector 
@@ -416,53 +416,53 @@ const FileOperations: React.FC = () => {
             </div>
           </div>
           
-          {/* Shell Command Section - Now below File Deployment */}
+          {/* Shell Command Section */}
           <div className="space-y-4 bg-[#EEEEEE] p-4 rounded-md">
             <h3 className="text-lg font-medium text-[#2A4759]">Shell Command</h3>
             
             <div>
-              <Label htmlFor="shell-user-select">Select User</Label>
+              <Label htmlFor="shell-user-select" className="text-[#2A4759]">Select User</Label>
               <Select value={shellSelectedUser} onValueChange={setShellSelectedUser}>
-                <SelectTrigger id="shell-user-select" className="bg-[#EEEEEE] border-[#2A4759]">
-                  <SelectValue placeholder="Select a user" />
+                <SelectTrigger id="shell-user-select" className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]">
+                  <SelectValue placeholder="Select a user" className="text-[#2A4759]" />
                 </SelectTrigger>
-                <SelectContent className="bg-[#DDDDDD] border-[#2A4759]">
-                  <SelectItem value="infadm">infadm</SelectItem>
-                  <SelectItem value="abpwrk1">abpwrk1</SelectItem>
+                <SelectContent className="bg-[#DDDDDD] border-[#2A4759] text-[#2A4759]">
+                  <SelectItem value="infadm" className="text-[#2A4759]">infadm</SelectItem>
+                  <SelectItem value="abpwrk1" className="text-[#2A4759]">abpwrk1</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             
             <div>
-              <Label htmlFor="shell-target-path">Default User Home Path</Label>
+              <Label htmlFor="shell-target-path" className="text-[#2A4759]">Default User Home Path</Label>
               <Input 
                 id="shell-target-path" 
                 value={shellTargetPath} 
                 onChange={(e) => setShellTargetPath(e.target.value)}
                 placeholder="/home/infadm" 
-                className="bg-[#EEEEEE] border-[#2A4759]"
+                className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]"
               />
             </div>
             
             <div>
-              <Label htmlFor="shell-working-dir">Command Working Directory</Label>
+              <Label htmlFor="shell-working-dir" className="text-[#2A4759]">Command Working Directory</Label>
               <Input 
                 id="shell-working-dir" 
                 value={shellWorkingDir} 
                 onChange={(e) => setShellWorkingDir(e.target.value)}
                 placeholder="/opt/amdocs/scripts" 
-                className="bg-[#EEEEEE] border-[#2A4759]"
+                className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]"
               />
             </div>
             
             <div>
-              <Label htmlFor="shell-command">Command (chmod, chown, etc.)</Label>
+              <Label htmlFor="shell-command" className="text-[#2A4759]">Command (chmod, chown, etc.)</Label>
               <Input 
                 id="shell-command" 
                 value={shellCommand} 
                 onChange={(e) => setShellCommand(e.target.value)}
                 placeholder="chmod 755 /path/to/file" 
-                className="bg-[#EEEEEE] border-[#2A4759]"
+                className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]"
               />
             </div>
             
@@ -472,7 +472,7 @@ const FileOperations: React.FC = () => {
                 checked={shellUseSudo} 
                 onCheckedChange={(checked) => setShellUseSudo(checked === true)}
               />
-              <Label htmlFor="shell-sudo">Use sudo</Label>
+              <Label htmlFor="shell-sudo" className="text-[#2A4759]">Use sudo</Label>
             </div>
             
             <VMSelector 
@@ -491,16 +491,16 @@ const FileOperations: React.FC = () => {
           </div>
         </div>
         
-        {/* Logs Section - Split into two columns */}
+        {/* Logs Section - Adjusted to align with their respective operations */}
         <div className="space-y-6">
           {/* File Deployment Logs */}
-          <div className="h-[300px]">
-            <LogDisplay logs={fileLogs} height="250px" title="File Deployment Logs" />
+          <div>
+            <LogDisplay logs={fileLogs} height="345px" title="File Deployment Logs" />
           </div>
           
           {/* Shell Command Logs */}
-          <div className="h-[300px]">
-            <LogDisplay logs={shellLogs} height="250px" title="Shell Command Logs" />
+          <div>
+            <LogDisplay logs={shellLogs} height="485px" title="Shell Command Logs" />
           </div>
         </div>
       </div>

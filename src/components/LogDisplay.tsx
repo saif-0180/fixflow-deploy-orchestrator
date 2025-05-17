@@ -18,8 +18,8 @@ const LogDisplay: React.FC<LogDisplayProps> = ({ logs, height = "300px", title =
   }, [logs]);
 
   return (
-    <div className="space-y-2">
-      <h3 className="font-medium">{title}</h3>
+    <div className="space-y-2 h-full">
+      <h3 className="font-medium text-[#2A4759]">{title}</h3>
       <div 
         className="bg-black rounded-md p-4 overflow-y-auto font-mono text-sm" 
         style={{ height, maxHeight: height }}
