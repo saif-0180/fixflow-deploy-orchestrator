@@ -24,7 +24,7 @@ const FileOperations: React.FC = () => {
   const [targetPath, setTargetPath] = useState<string>("");
   const [selectedVMs, setSelectedVMs] = useState<string[]>([]);
   const [useSudo, setUseSudo] = useState<boolean>(false);
-  const [logs, setLogs] = useState<string[]>([]);
+  const [fileLogs, setFileLogs] = useState<string[]>([]);
   const [deploymentId, setDeploymentId] = useState<string | null>(null);
   const [shellCommand, setShellCommand] = useState<string>("");
   
@@ -35,6 +35,7 @@ const FileOperations: React.FC = () => {
   const [shellTargetPath, setShellTargetPath] = useState<string>("");
   const [shellWorkingDir, setShellWorkingDir] = useState<string>("");
   const [shellCommandId, setShellCommandId] = useState<string | null>(null);
+  const [shellLogs, setShellLogs] = useState<string[]>([]);
   const [vms, setVms] = useState<string[]>([]);
 
   // Fetch all FTs
@@ -129,7 +130,7 @@ const FileOperations: React.FC = () => {
       // Add validation results to logs
       if (data.results) {
         data.results.forEach((result: any) => {
-          setLogs(prev => [...prev, `Validation on ${result.vm}: ${result.status}`]);
+          setFileLogs(prev => [...prev, `Validation on ${result.vm}: ${result.status}`]);
         });
       }
     },
@@ -191,7 +192,7 @@ const FileOperations: React.FC = () => {
     
     eventSource.onmessage = (event) => {
       const logData = JSON.parse(event.data);
-      setLogs(prev => [...prev, logData.message]);
+      setFileLogs(prev => [...prev, logData.message]);
       
       if (logData.status === 'completed' || logData.status === 'failed') {
         eventSource.close();
@@ -215,7 +216,7 @@ const FileOperations: React.FC = () => {
     
     eventSource.onmessage = (event) => {
       const logData = JSON.parse(event.data);
-      setLogs(prev => [...prev, logData.message]);
+      setShellLogs(prev => [...prev, logData.message]);
       
       if (logData.status === 'completed' || logData.status === 'failed') {
         eventSource.close();
@@ -288,7 +289,7 @@ const FileOperations: React.FC = () => {
       return;
     }
 
-    setLogs([]);
+    setFileLogs([]);
     deployMutation.mutate();
   };
 
@@ -311,7 +312,7 @@ const FileOperations: React.FC = () => {
       return;
     }
 
-    setLogs([]);
+    setShellLogs([]);
     shellCommandMutation.mutate();
   };
 
@@ -490,9 +491,17 @@ const FileOperations: React.FC = () => {
           </div>
         </div>
         
-        {/* Logs Section - Full height on the right */}
-        <div className="h-full">
-          <LogDisplay logs={logs} height="600px" />
+        {/* Logs Section - Split into two columns */}
+        <div className="space-y-6">
+          {/* File Deployment Logs */}
+          <div className="h-[300px]">
+            <LogDisplay logs={fileLogs} height="250px" title="File Deployment Logs" />
+          </div>
+          
+          {/* Shell Command Logs */}
+          <div className="h-[300px]">
+            <LogDisplay logs={shellLogs} height="250px" title="Shell Command Logs" />
+          </div>
         </div>
       </div>
     </div>

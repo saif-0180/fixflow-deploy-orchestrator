@@ -12,7 +12,7 @@ const queryClient = new QueryClient();
 const Index = () => {
   return (
     <QueryClientProvider client={queryClient}>
-      <div className="min-h-screen bg-[#EEEEEE] text-[#2A4759]">
+      <div className="min-h-screen bg-[#2A4759] text-[#EEEEEE]">
         <header className="bg-[#F79B72] text-[#2A4759] px-6 py-4 shadow-md">
           <h1 className="text-2xl font-bold">Private-Fix-Deployment-Tool</h1>
         </header>

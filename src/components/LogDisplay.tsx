@@ -1,12 +1,14 @@
 
 import React, { useRef, useEffect } from 'react';
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface LogDisplayProps {
   logs: string[];
   height?: string;
+  title?: string;
 }
 
-const LogDisplay: React.FC<LogDisplayProps> = ({ logs, height = "300px" }) => {
+const LogDisplay: React.FC<LogDisplayProps> = ({ logs, height = "300px", title = "Logs" }) => {
   const logEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -17,7 +19,7 @@ const LogDisplay: React.FC<LogDisplayProps> = ({ logs, height = "300px" }) => {
 
   return (
     <div className="space-y-2">
-      <h3 className="font-medium">Logs</h3>
+      <h3 className="font-medium">{title}</h3>
       <div 
         className="bg-black rounded-md p-4 overflow-y-auto font-mono text-sm" 
         style={{ height, maxHeight: height }}

@@ -167,78 +167,80 @@ const SqlOperations = () => {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-xl font-semibold text-[#F97316]">SQL Deployment</h2>
+      <h2 className="text-2xl font-bold text-[#2A4759] mb-4">SQL Deployment</h2>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="space-y-4">
-          <div>
-            <Label htmlFor="sql-ft-select">Select FT</Label>
-            <Select value={selectedFt} onValueChange={setSelectedFt}>
-              <SelectTrigger id="sql-ft-select" className="bg-[#333333] border-gray-700">
-                <SelectValue placeholder="Select an FT" />
-              </SelectTrigger>
-              <SelectContent className="bg-[#333333] border-gray-700">
-                {fts.map((ft: string) => (
-                  <SelectItem key={ft} value={ft}>{ft}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <div className="space-y-4 bg-[#EEEEEE] p-4 rounded-md">
+            <div>
+              <Label htmlFor="sql-ft-select">Select FT</Label>
+              <Select value={selectedFt} onValueChange={setSelectedFt}>
+                <SelectTrigger id="sql-ft-select" className="bg-[#EEEEEE] border-[#2A4759]">
+                  <SelectValue placeholder="Select an FT" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#DDDDDD] border-[#2A4759]">
+                  {fts.map((ft: string) => (
+                    <SelectItem key={ft} value={ft}>{ft}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-          <div>
-            <Label htmlFor="sql-file-select">Select SQL File</Label>
-            <Select 
-              value={selectedFile} 
-              onValueChange={setSelectedFile}
-              disabled={!selectedFt}
+            <div>
+              <Label htmlFor="sql-file-select">Select SQL File</Label>
+              <Select 
+                value={selectedFile} 
+                onValueChange={setSelectedFile}
+                disabled={!selectedFt}
+              >
+                <SelectTrigger id="sql-file-select" className="bg-[#EEEEEE] border-[#2A4759]">
+                  <SelectValue placeholder="Select a SQL file" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#DDDDDD] border-[#2A4759]">
+                  {sqlFiles.map((file: string) => (
+                    <SelectItem key={file} value={file}>{file}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label htmlFor="db-user-select">Select DB User</Label>
+              <Select value={selectedDbUser} onValueChange={setSelectedDbUser}>
+                <SelectTrigger id="db-user-select" className="bg-[#EEEEEE] border-[#2A4759]">
+                  <SelectValue placeholder="Select a database user" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#DDDDDD] border-[#2A4759]">
+                  {dbUsers.map((user: string) => (
+                    <SelectItem key={user} value={user}>{user}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label htmlFor="db-password">DB Password</Label>
+              <Input 
+                id="db-password" 
+                type="password"
+                value={dbPassword} 
+                onChange={(e) => setDbPassword(e.target.value)}
+                className="bg-[#EEEEEE] border-[#2A4759]"
+              />
+            </div>
+
+            <Button 
+              onClick={handleDeploy} 
+              className="bg-[#F79B72] text-[#2A4759] hover:bg-[#F79B72]/80"
+              disabled={sqlDeployMutation.isPending}
             >
-              <SelectTrigger id="sql-file-select" className="bg-[#333333] border-gray-700">
-                <SelectValue placeholder="Select a SQL file" />
-              </SelectTrigger>
-              <SelectContent className="bg-[#333333] border-gray-700">
-                {sqlFiles.map((file: string) => (
-                  <SelectItem key={file} value={file}>{file}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              {sqlDeployMutation.isPending ? "Deploying..." : "Deploy SQL"}
+            </Button>
           </div>
-
-          <div>
-            <Label htmlFor="db-user-select">Select DB User</Label>
-            <Select value={selectedDbUser} onValueChange={setSelectedDbUser}>
-              <SelectTrigger id="db-user-select" className="bg-[#333333] border-gray-700">
-                <SelectValue placeholder="Select a database user" />
-              </SelectTrigger>
-              <SelectContent className="bg-[#333333] border-gray-700">
-                {dbUsers.map((user: string) => (
-                  <SelectItem key={user} value={user}>{user}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div>
-            <Label htmlFor="db-password">DB Password</Label>
-            <Input 
-              id="db-password" 
-              type="password"
-              value={dbPassword} 
-              onChange={(e) => setDbPassword(e.target.value)}
-              className="bg-[#333333] border-gray-700"
-            />
-          </div>
-
-          <Button 
-            onClick={handleDeploy} 
-            className="bg-[#F97316] text-black hover:bg-orange-400"
-            disabled={sqlDeployMutation.isPending}
-          >
-            {sqlDeployMutation.isPending ? "Deploying..." : "Deploy SQL"}
-          </Button>
         </div>
 
         <div>
-          <LogDisplay logs={logs} />
+          <LogDisplay logs={logs} height="300px" />
         </div>
       </div>
     </div>
