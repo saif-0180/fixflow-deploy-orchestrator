@@ -12,41 +12,41 @@ const queryClient = new QueryClient();
 const Index = () => {
   return (
     <QueryClientProvider client={queryClient}>
-      <div className="min-h-screen bg-[#1A1A1A] text-gray-100">
-        <header className="bg-[#F97316] text-black px-6 py-4 shadow-md">
-          <h1 className="text-2xl font-bold">Fix Deployment Orchestrator</h1>
+      <div className="min-h-screen bg-[#EEEEEE] text-[#2A4759]">
+        <header className="bg-[#F79B72] text-[#2A4759] px-6 py-4 shadow-md">
+          <h1 className="text-2xl font-bold">Private-Fix-Deployment-Tool</h1>
         </header>
         
         <main className="container mx-auto px-4 py-6">
           <Tabs defaultValue="file" className="w-full">
-            <TabsList className="grid w-full grid-cols-4 bg-[#2A2A2A] mb-6">
-              <TabsTrigger value="file" className="data-[state=active]:bg-[#F97316] data-[state=active]:text-black">
+            <TabsList className="grid w-full grid-cols-4 bg-[#DDDDDD] mb-6">
+              <TabsTrigger value="file" className="data-[state=active]:bg-[#F79B72] data-[state=active]:text-[#2A4759]">
                 File Operations
               </TabsTrigger>
-              <TabsTrigger value="sql" className="data-[state=active]:bg-[#F97316] data-[state=active]:text-black">
+              <TabsTrigger value="sql" className="data-[state=active]:bg-[#F79B72] data-[state=active]:text-[#2A4759]">
                 SQL Operations
               </TabsTrigger>
-              <TabsTrigger value="systemctl" className="data-[state=active]:bg-[#F97316] data-[state=active]:text-black">
+              <TabsTrigger value="systemctl" className="data-[state=active]:bg-[#F79B72] data-[state=active]:text-[#2A4759]">
                 Systemctl Operations
               </TabsTrigger>
-              <TabsTrigger value="history" className="data-[state=active]:bg-[#F97316] data-[state=active]:text-black">
+              <TabsTrigger value="history" className="data-[state=active]:bg-[#F79B72] data-[state=active]:text-[#2A4759]">
                 Deployment History
               </TabsTrigger>
             </TabsList>
             
-            <TabsContent value="file" className="p-6 bg-[#2A2A2A] rounded-md">
+            <TabsContent value="file" className="p-6 bg-[#DDDDDD] rounded-md">
               <FileOperations />
             </TabsContent>
             
-            <TabsContent value="sql" className="p-6 bg-[#2A2A2A] rounded-md">
+            <TabsContent value="sql" className="p-6 bg-[#DDDDDD] rounded-md">
               <SqlOperations />
             </TabsContent>
             
-            <TabsContent value="systemctl" className="p-6 bg-[#2A2A2A] rounded-md">
+            <TabsContent value="systemctl" className="p-6 bg-[#DDDDDD] rounded-md">
               <SystemctlOperations />
             </TabsContent>
             
-            <TabsContent value="history" className="p-6 bg-[#2A2A2A] rounded-md">
+            <TabsContent value="history" className="p-6 bg-[#DDDDDD] rounded-md">
               <DeploymentHistory />
             </TabsContent>
           </Tabs>

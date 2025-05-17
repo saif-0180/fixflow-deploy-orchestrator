@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -150,17 +151,17 @@ const SystemctlOperations: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-orange-500 mb-4">Systemd Service Management</h2>
+      <h2 className="text-2xl font-bold text-[#2A4759] mb-4">Systemd Service Management</h2>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="space-y-4">
           <div>
             <Label htmlFor="service-select">Select Service</Label>
             <Select value={selectedService} onValueChange={setSelectedService}>
-              <SelectTrigger id="service-select" className="bg-[#333333] border-gray-700">
+              <SelectTrigger id="service-select" className="bg-[#EEEEEE] border-[#2A4759]">
                 <SelectValue placeholder="Select a service" />
               </SelectTrigger>
-              <SelectContent className="bg-[#333333] border-gray-700">
+              <SelectContent className="bg-[#EEEEEE] border-[#2A4759]">
                 {services.map((service: string) => (
                   <SelectItem key={service} value={service}>{service}</SelectItem>
                 ))}
@@ -171,10 +172,10 @@ const SystemctlOperations: React.FC = () => {
           <div>
             <Label htmlFor="operation-select">Select Operation</Label>
             <Select value={selectedOperation} onValueChange={setSelectedOperation}>
-              <SelectTrigger id="operation-select" className="bg-[#333333] border-gray-700">
+              <SelectTrigger id="operation-select" className="bg-[#EEEEEE] border-[#2A4759]">
                 <SelectValue placeholder="Select an operation" />
               </SelectTrigger>
-              <SelectContent className="bg-[#333333] border-gray-700">
+              <SelectContent className="bg-[#EEEEEE] border-[#2A4759]">
                 <SelectItem value="status">status</SelectItem>
                 <SelectItem value="start">start</SelectItem>
                 <SelectItem value="stop">stop</SelectItem>
@@ -191,7 +192,7 @@ const SystemctlOperations: React.FC = () => {
 
           <Button 
             onClick={handleExecute} 
-            className="bg-[#F97316] text-black hover:bg-orange-400"
+            className="bg-[#F79B72] text-[#2A4759] hover:bg-[#F79B72]/80"
             disabled={systemctlMutation.isPending}
           >
             {systemctlMutation.isPending ? "Executing..." : "Execute"}
