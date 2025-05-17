@@ -28,12 +28,13 @@ const FileOperations: React.FC = () => {
   const [deploymentId, setDeploymentId] = useState<string | null>(null);
   const [shellCommand, setShellCommand] = useState<string>("");
   
-  // New state for shell command options
+  // Shell command options
   const [shellSelectedVMs, setShellSelectedVMs] = useState<string[]>([]);
   const [shellSelectedUser, setShellSelectedUser] = useState<string>("infadm");
   const [shellUseSudo, setShellUseSudo] = useState<boolean>(false);
   const [shellTargetPath, setShellTargetPath] = useState<string>("");
   const [shellWorkingDir, setShellWorkingDir] = useState<string>("");
+  const [shellCommandId, setShellCommandId] = useState<string | null>(null);
   const [vms, setVms] = useState<string[]>([]);
 
   // Fetch all FTs
@@ -162,18 +163,16 @@ const FileOperations: React.FC = () => {
         throw new Error('Shell command execution failed');
       }
       
-      return response.json();
+      const data = await response.json();
+      setShellCommandId(data.commandId); // Store the command ID for live logs
+      return data;
     },
-    onSuccess: (data) => {
+    onSuccess: () => {
       toast({
         title: "Command Executed",
-        description: "Shell command has been executed.",
+        description: "Shell command has been initiated.",
       });
-      if (data.results) {
-        data.results.forEach((result: any) => {
-          setLogs(prev => [...prev, `Command on ${result.vm}: ${result.output}`]);
-        });
-      }
+      // The actual results will come through the EventSource
     },
     onError: (error) => {
       toast({
@@ -184,7 +183,7 @@ const FileOperations: React.FC = () => {
     },
   });
 
-  // Fetch log updates
+  // Fetch log updates for file deployments
   useEffect(() => {
     if (!deploymentId) return;
 
@@ -207,6 +206,30 @@ const FileOperations: React.FC = () => {
       eventSource.close();
     };
   }, [deploymentId]);
+
+  // Fetch log updates for shell commands
+  useEffect(() => {
+    if (!shellCommandId) return;
+
+    const eventSource = new EventSource(`/api/command/${shellCommandId}/logs`);
+    
+    eventSource.onmessage = (event) => {
+      const logData = JSON.parse(event.data);
+      setLogs(prev => [...prev, logData.message]);
+      
+      if (logData.status === 'completed' || logData.status === 'failed') {
+        eventSource.close();
+      }
+    };
+
+    eventSource.onerror = () => {
+      eventSource.close();
+    };
+
+    return () => {
+      eventSource.close();
+    };
+  }, [shellCommandId]);
 
   // Add a useEffect to fetch VMs
   useEffect(() => {
@@ -288,178 +311,188 @@ const FileOperations: React.FC = () => {
       return;
     }
 
+    setLogs([]);
     shellCommandMutation.mutate();
   };
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-[#2A4759] mb-4">File Deployment</h2>
+      <h2 className="text-2xl font-bold text-[#2A4759] mb-4">File Operations</h2>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="space-y-4">
-          <div>
-            <Label htmlFor="ft-select">Select FT</Label>
-            <Select value={selectedFt} onValueChange={setSelectedFt}>
-              <SelectTrigger id="ft-select" className="bg-[#EEEEEE] border-[#2A4759]">
-                <SelectValue placeholder="Select an FT" />
-              </SelectTrigger>
-              <SelectContent className="bg-[#EEEEEE] border-[#2A4759]">
-                {fts.map((ft: string) => (
-                  <SelectItem key={ft} value={ft}>{ft}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+        <div className="space-y-6">
+          {/* File Deployment Section */}
+          <div className="space-y-4 bg-[#EEEEEE] p-4 rounded-md">
+            <h3 className="text-lg font-medium text-[#2A4759]">File Deployment</h3>
 
-          <div>
-            <Label htmlFor="file-select">Select File</Label>
-            <Select 
-              value={selectedFile} 
-              onValueChange={setSelectedFile}
-              disabled={!selectedFt}
+            <div>
+              <Label htmlFor="ft-select">Select FT</Label>
+              <Select value={selectedFt} onValueChange={setSelectedFt}>
+                <SelectTrigger id="ft-select" className="bg-[#EEEEEE] border-[#2A4759]">
+                  <SelectValue placeholder="Select an FT" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#DDDDDD] border-[#2A4759]">
+                  {fts.map((ft: string) => (
+                    <SelectItem key={ft} value={ft}>{ft}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label htmlFor="file-select">Select File</Label>
+              <Select 
+                value={selectedFile} 
+                onValueChange={setSelectedFile}
+                disabled={!selectedFt}
+              >
+                <SelectTrigger id="file-select" className="bg-[#EEEEEE] border-[#2A4759]">
+                  <SelectValue placeholder="Select a file" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#DDDDDD] border-[#2A4759]">
+                  {files.map((file: string) => (
+                    <SelectItem key={file} value={file}>{file}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label htmlFor="user-select">Select User</Label>
+              <Select value={selectedUser} onValueChange={setSelectedUser}>
+                <SelectTrigger id="user-select" className="bg-[#EEEEEE] border-[#2A4759]">
+                  <SelectValue placeholder="Select a user" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#DDDDDD] border-[#2A4759]">
+                  <SelectItem value="infadm">infadm</SelectItem>
+                  <SelectItem value="abpwrk1">abpwrk1</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label htmlFor="target-path">Target Path</Label>
+              <Input 
+                id="target-path" 
+                value={targetPath} 
+                onChange={(e) => setTargetPath(e.target.value)}
+                placeholder="/opt/amdocs/abpwrk1/pbin/app" 
+                className="bg-[#EEEEEE] border-[#2A4759]"
+              />
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <Checkbox 
+                id="sudo" 
+                checked={useSudo} 
+                onCheckedChange={(checked) => setUseSudo(checked === true)}
+              />
+              <Label htmlFor="sudo">Use sudo</Label>
+            </div>
+
+            <VMSelector 
+              vms={vms} 
+              selectedVMs={selectedVMs} 
+              setSelectedVMs={setSelectedVMs} 
+            />
+
+            <div className="flex space-x-2">
+              <Button 
+                onClick={handleDeploy} 
+                className="bg-[#F79B72] text-[#2A4759] hover:bg-[#F79B72]/80"
+                disabled={deployMutation.isPending}
+              >
+                {deployMutation.isPending ? "Deploying..." : "Deploy"}
+              </Button>
+              
+              <Button 
+                onClick={() => validateMutation.mutate()}
+                className="bg-[#2A4759] hover:bg-[#2A4759]/80 text-white"
+                disabled={!deploymentId || validateMutation.isPending}
+              >
+                Validate
+              </Button>
+            </div>
+          </div>
+          
+          {/* Shell Command Section - Now below File Deployment */}
+          <div className="space-y-4 bg-[#EEEEEE] p-4 rounded-md">
+            <h3 className="text-lg font-medium text-[#2A4759]">Shell Command</h3>
+            
+            <div>
+              <Label htmlFor="shell-user-select">Select User</Label>
+              <Select value={shellSelectedUser} onValueChange={setShellSelectedUser}>
+                <SelectTrigger id="shell-user-select" className="bg-[#EEEEEE] border-[#2A4759]">
+                  <SelectValue placeholder="Select a user" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#DDDDDD] border-[#2A4759]">
+                  <SelectItem value="infadm">infadm</SelectItem>
+                  <SelectItem value="abpwrk1">abpwrk1</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div>
+              <Label htmlFor="shell-target-path">Default User Home Path</Label>
+              <Input 
+                id="shell-target-path" 
+                value={shellTargetPath} 
+                onChange={(e) => setShellTargetPath(e.target.value)}
+                placeholder="/home/infadm" 
+                className="bg-[#EEEEEE] border-[#2A4759]"
+              />
+            </div>
+            
+            <div>
+              <Label htmlFor="shell-working-dir">Command Working Directory</Label>
+              <Input 
+                id="shell-working-dir" 
+                value={shellWorkingDir} 
+                onChange={(e) => setShellWorkingDir(e.target.value)}
+                placeholder="/opt/amdocs/scripts" 
+                className="bg-[#EEEEEE] border-[#2A4759]"
+              />
+            </div>
+            
+            <div>
+              <Label htmlFor="shell-command">Command (chmod, chown, etc.)</Label>
+              <Input 
+                id="shell-command" 
+                value={shellCommand} 
+                onChange={(e) => setShellCommand(e.target.value)}
+                placeholder="chmod 755 /path/to/file" 
+                className="bg-[#EEEEEE] border-[#2A4759]"
+              />
+            </div>
+            
+            <div className="flex items-center space-x-2">
+              <Checkbox 
+                id="shell-sudo" 
+                checked={shellUseSudo} 
+                onCheckedChange={(checked) => setShellUseSudo(checked === true)}
+              />
+              <Label htmlFor="shell-sudo">Use sudo</Label>
+            </div>
+            
+            <VMSelector 
+              vms={vms} 
+              selectedVMs={shellSelectedVMs} 
+              setSelectedVMs={setShellSelectedVMs} 
+            />
+
+            <Button 
+              onClick={handleRunShellCommand} 
+              className="bg-[#F79B72] text-[#2A4759] hover:bg-[#F79B72]/80"
+              disabled={shellCommandMutation.isPending}
             >
-              <SelectTrigger id="file-select" className="bg-[#EEEEEE] border-[#2A4759]">
-                <SelectValue placeholder="Select a file" />
-              </SelectTrigger>
-              <SelectContent className="bg-[#EEEEEE] border-[#2A4759]">
-                {files.map((file: string) => (
-                  <SelectItem key={file} value={file}>{file}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              {shellCommandMutation.isPending ? "Running..." : "Run Command"}
+            </Button>
           </div>
-
-          <div>
-            <Label htmlFor="user-select">Select User</Label>
-            <Select value={selectedUser} onValueChange={setSelectedUser}>
-              <SelectTrigger id="user-select" className="bg-[#EEEEEE] border-[#2A4759]">
-                <SelectValue placeholder="Select a user" />
-              </SelectTrigger>
-              <SelectContent className="bg-[#EEEEEE] border-[#2A4759]">
-                <SelectItem value="infadm">infadm</SelectItem>
-                <SelectItem value="abpwrk1">abpwrk1</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div>
-            <Label htmlFor="target-path">Target Path</Label>
-            <Input 
-              id="target-path" 
-              value={targetPath} 
-              onChange={(e) => setTargetPath(e.target.value)}
-              placeholder="/opt/amdocs/abpwrk1/pbin/app" 
-              className="bg-[#EEEEEE] border-[#2A4759]"
-            />
-          </div>
-
-          <div className="flex items-center space-x-2">
-            <Checkbox 
-              id="sudo" 
-              checked={useSudo} 
-              onCheckedChange={(checked) => setUseSudo(checked === true)}
-            />
-            <Label htmlFor="sudo">Use sudo</Label>
-          </div>
-
-          <VMSelector 
-            vms={vms} 
-            selectedVMs={selectedVMs} 
-            setSelectedVMs={setSelectedVMs} 
-          />
-
-          <Button 
-            onClick={handleDeploy} 
-            className="bg-[#F79B72] text-[#2A4759] hover:bg-[#F79B72]/80"
-            disabled={deployMutation.isPending}
-          >
-            {deployMutation.isPending ? "Deploying..." : "Deploy"}
-          </Button>
-          
-          <Button 
-            onClick={() => validateMutation.mutate()}
-            className="ml-2 bg-[#2A4759] hover:bg-[#2A4759]/80 text-white"
-            disabled={!deploymentId || validateMutation.isPending}
-          >
-            Validate
-          </Button>
         </div>
-
-        <div className="space-y-4">
-          <h3 className="text-lg font-medium text-[#2A4759]">Shell Command</h3>
-          
-          <div>
-            <Label htmlFor="shell-user-select">Select User</Label>
-            <Select value={shellSelectedUser} onValueChange={setShellSelectedUser}>
-              <SelectTrigger id="shell-user-select" className="bg-[#EEEEEE] border-[#2A4759]">
-                <SelectValue placeholder="Select a user" />
-              </SelectTrigger>
-              <SelectContent className="bg-[#EEEEEE] border-[#2A4759]">
-                <SelectItem value="infadm">infadm</SelectItem>
-                <SelectItem value="abpwrk1">abpwrk1</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          
-          <div>
-            <Label htmlFor="shell-target-path">Default User Home Path</Label>
-            <Input 
-              id="shell-target-path" 
-              value={shellTargetPath} 
-              onChange={(e) => setShellTargetPath(e.target.value)}
-              placeholder="/home/infadm" 
-              className="bg-[#EEEEEE] border-[#2A4759]"
-            />
-          </div>
-          
-          <div>
-            <Label htmlFor="shell-working-dir">Command Working Directory</Label>
-            <Input 
-              id="shell-working-dir" 
-              value={shellWorkingDir} 
-              onChange={(e) => setShellWorkingDir(e.target.value)}
-              placeholder="/opt/amdocs/scripts" 
-              className="bg-[#EEEEEE] border-[#2A4759]"
-            />
-          </div>
-          
-          <div>
-            <Label htmlFor="shell-command">Command (chmod, chown, etc.)</Label>
-            <Input 
-              id="shell-command" 
-              value={shellCommand} 
-              onChange={(e) => setShellCommand(e.target.value)}
-              placeholder="chmod 755 /path/to/file" 
-              className="bg-[#EEEEEE] border-[#2A4759]"
-            />
-          </div>
-          
-          <div className="flex items-center space-x-2">
-            <Checkbox 
-              id="shell-sudo" 
-              checked={shellUseSudo} 
-              onCheckedChange={(checked) => setShellUseSudo(checked === true)}
-            />
-            <Label htmlFor="shell-sudo">Use sudo</Label>
-          </div>
-          
-          <VMSelector 
-            vms={vms} 
-            selectedVMs={shellSelectedVMs} 
-            setSelectedVMs={setShellSelectedVMs} 
-          />
-
-          <Button 
-            onClick={handleRunShellCommand} 
-            className="bg-[#F79B72] text-[#2A4759] hover:bg-[#F79B72]/80"
-            disabled={shellCommandMutation.isPending}
-          >
-            {shellCommandMutation.isPending ? "Running..." : "Run Command"}
-          </Button>
-
-          <div className="mt-8">
-            <LogDisplay logs={logs} />
-          </div>
+        
+        {/* Logs Section - Full height on the right */}
+        <div className="h-full">
+          <LogDisplay logs={logs} height="600px" />
         </div>
       </div>
     </div>
