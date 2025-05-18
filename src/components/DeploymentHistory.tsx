@@ -35,19 +35,29 @@ const DeploymentHistory: React.FC = () => {
   const [selectedDeploymentId, setSelectedDeploymentId] = useState<string | null>(null);
   const [deploymentLogs, setDeploymentLogs] = useState<string[]>([]);
   const [clearDays, setClearDays] = useState<number>(30);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
 
   // Fetch deployment history
   const { data: deployments = [], refetch: refetchDeployments } = useQuery({
     queryKey: ['deployment-history'],
     queryFn: async () => {
       logger.info('Fetching deployment history');
-      const response = await fetch('/api/deployments/history');
-      if (!response.ok) {
-        const errorText = await response.text();
-        logger.error(`Failed to fetch deployment history: ${errorText}`);
-        throw new Error('Failed to fetch deployment history');
+      try {
+        setIsLoading(true);
+        const response = await fetch('/api/deployments/history');
+        if (!response.ok) {
+          const errorText = await response.text();
+          logger.error(`Failed to fetch deployment history: ${errorText}`);
+          throw new Error('Failed to fetch deployment history');
+        }
+        const data = await response.json();
+        return data as Deployment[];
+      } catch (error) {
+        logger.error(`Error in history fetch: ${error}`);
+        throw error;
+      } finally {
+        setIsLoading(false);
       }
-      return response.json() as Promise<Deployment[]>;
     }
   });
 
@@ -97,6 +107,7 @@ const DeploymentHistory: React.FC = () => {
     const fetchLogs = async () => {
       logger.info(`Fetching logs for deployment: ${selectedDeploymentId}`);
       try {
+        setIsLoading(true);
         const response = await fetch(`/api/deploy/${selectedDeploymentId}/logs`);
         if (!response.ok) {
           toast({
@@ -108,7 +119,18 @@ const DeploymentHistory: React.FC = () => {
         }
         
         const data = await response.json();
-        setDeploymentLogs(data.logs || []);
+        // If the deployment has logs in the history, use those
+        if (data.logs && data.logs.length > 0) {
+          setDeploymentLogs(data.logs);
+        } else {
+          // If no logs in response, check if the selected deployment has logs
+          const selectedDeployment = deployments.find(d => d.id === selectedDeploymentId);
+          if (selectedDeployment?.logs && selectedDeployment.logs.length > 0) {
+            setDeploymentLogs(selectedDeployment.logs);
+          } else {
+            setDeploymentLogs(["No logs available for this deployment"]);
+          }
+        }
       } catch (error) {
         logger.error(`Error fetching logs: ${error}`);
         toast({
@@ -116,11 +138,20 @@ const DeploymentHistory: React.FC = () => {
           description: "Failed to fetch logs",
           variant: "destructive",
         });
+      } finally {
+        setIsLoading(false);
       }
     };
     
     fetchLogs();
-  }, [selectedDeploymentId, toast]);
+  }, [selectedDeploymentId, toast, deployments]);
+
+  // Auto-select the first deployment when list loads and none is selected
+  useEffect(() => {
+    if (deployments.length > 0 && !selectedDeploymentId) {
+      setSelectedDeploymentId(deployments[0].id);
+    }
+  }, [deployments, selectedDeploymentId]);
 
   // Extract selected deployment for display
   const selectedDeployment = selectedDeploymentId 
@@ -130,13 +161,13 @@ const DeploymentHistory: React.FC = () => {
   const formatDeploymentSummary = (deployment: Deployment): string => {
     switch (deployment.type) {
       case 'file':
-        return `File: ${deployment.ft}/${deployment.file} (${deployment.status})`;
+        return `File: ${deployment.ft || 'N/A'}/${deployment.file || 'N/A'} (${deployment.status})`;
       case 'sql':
-        return `SQL: ${deployment.ft}/${deployment.file} (${deployment.status})`;
+        return `SQL: ${deployment.ft || 'N/A'}/${deployment.file || 'N/A'} (${deployment.status})`;
       case 'systemd':
-        return `Systemd: ${deployment.operation} ${deployment.service} (${deployment.status})`;
+        return `Systemd: ${deployment.operation || 'N/A'} ${deployment.service || 'N/A'} (${deployment.status})`;
       case 'command':
-        return `Command: ${deployment.command?.substring(0, 30)}${deployment.command && deployment.command.length > 30 ? '...' : ''} (${deployment.status})`;
+        return `Command: ${deployment.command ? `${deployment.command.substring(0, 30)}${deployment.command.length > 30 ? '...' : ''}` : 'N/A'} (${deployment.status})`;
       default:
         return `${deployment.type} (${deployment.status})`;
     }
@@ -168,32 +199,38 @@ const DeploymentHistory: React.FC = () => {
             </CardHeader>
             <CardContent>
               <div className="h-[400px] overflow-y-auto">
-                <div className="space-y-2">
-                  {deployments.length === 0 ? (
-                    <p className="text-[#2A4759] italic">No deployment history found</p>
-                  ) : (
-                    deployments.map((deployment) => (
-                      <div 
-                        key={deployment.id} 
-                        className={`p-3 rounded-md cursor-pointer transition-colors ${
-                          selectedDeploymentId === deployment.id 
-                            ? 'bg-[#F79B72] text-[#2A4759]' 
-                            : 'bg-[#2A4759] text-[#EEEEEE] hover:bg-[#2A4759]/80'
-                        }`}
-                        onClick={() => setSelectedDeploymentId(deployment.id)}
-                      >
-                        <div className="flex justify-between">
-                          <div>
-                            {formatDeploymentSummary(deployment)}
-                          </div>
-                          <div className="text-xs">
-                            {new Date(deployment.timestamp).toLocaleString()}
+                {isLoading ? (
+                  <div className="flex items-center justify-center h-full">
+                    <p className="text-[#2A4759] italic">Loading deployments...</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {deployments.length === 0 ? (
+                      <p className="text-[#2A4759] italic">No deployment history found</p>
+                    ) : (
+                      deployments.map((deployment) => (
+                        <div 
+                          key={deployment.id} 
+                          className={`p-3 rounded-md cursor-pointer transition-colors ${
+                            selectedDeploymentId === deployment.id 
+                              ? 'bg-[#F79B72] text-[#2A4759]' 
+                              : 'bg-[#2A4759] text-[#EEEEEE] hover:bg-[#2A4759]/80'
+                          }`}
+                          onClick={() => setSelectedDeploymentId(deployment.id)}
+                        >
+                          <div className="flex justify-between">
+                            <div>
+                              {formatDeploymentSummary(deployment)}
+                            </div>
+                            <div className="text-xs">
+                              {new Date(deployment.timestamp).toLocaleString()}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))
-                  )}
-                </div>
+                      ))
+                    )}
+                  </div>
+                )}
               </div>
               
               <div className="mt-4 flex items-center space-x-2">
@@ -211,6 +248,12 @@ const DeploymentHistory: React.FC = () => {
                   className="bg-[#F79B72] text-[#2A4759] hover:bg-[#F79B72]/80"
                 >
                   {clearLogsMutation.isPending ? "Clearing..." : "Clear Logs"}
+                </Button>
+                <Button
+                  onClick={() => refetchDeployments()}
+                  className="bg-[#2A4759] text-white hover:bg-[#2A4759]/80 ml-auto"
+                >
+                  Refresh
                 </Button>
               </div>
             </CardContent>

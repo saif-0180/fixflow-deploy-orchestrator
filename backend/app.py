@@ -6,6 +6,7 @@ import time
 import uuid
 import threading
 import logging
+import glob
 from logging.handlers import RotatingFileHandler
 from werkzeug.utils import secure_filename
 from datetime import datetime, timedelta
@@ -18,10 +19,12 @@ FIX_FILES_DIR = os.environ.get('FIX_FILES_DIR', '/app/fixfiles')
 # Directory for deployment logs
 DEPLOYMENT_LOGS_DIR = os.environ.get('DEPLOYMENT_LOGS_DIR', '/app/logs')
 APP_LOG_FILE = os.environ.get('APP_LOG_FILE', '/app/logs/application.log')
+DEPLOYMENT_HISTORY_FILE = os.path.join(DEPLOYMENT_LOGS_DIR, 'deployment_history.json')
 
 # Create logs directory if it doesn't exist
 os.makedirs(DEPLOYMENT_LOGS_DIR, exist_ok=True)
 os.makedirs('/tmp/ansible-ssh', exist_ok=True)  # Ensure ansible control path directory exists
+os.chmod('/tmp/ansible-ssh', 0o777)  # Set proper permissions for ansible control path
 
 # Configure application logging
 logger = logging.getLogger('fix_deployment_orchestrator')
@@ -52,14 +55,24 @@ logger.debug(f"Deployment logs directory: {DEPLOYMENT_LOGS_DIR}")
 deployments = {}
 
 # Try to load previous deployments if they exist
-DEPLOYMENTS_HISTORY_FILE = os.path.join(DEPLOYMENT_LOGS_DIR, 'deployment_history.json')
 try:
-    if os.path.exists(DEPLOYMENTS_HISTORY_FILE):
-        with open(DEPLOYMENTS_HISTORY_FILE, 'r') as f:
+    if os.path.exists(DEPLOYMENT_HISTORY_FILE):
+        with open(DEPLOYMENT_HISTORY_FILE, 'r') as f:
             deployments = json.load(f)
         logger.info(f"Loaded {len(deployments)} previous deployments from history file")
     else:
-        logger.info("No deployment history file found, creating new one")
+        # Look for backup history files in the logs directory
+        backup_files = sorted(glob.glob(os.path.join(DEPLOYMENT_LOGS_DIR, 'deployment_history_*.json')), reverse=True)
+        if backup_files:
+            logger.info(f"Found {len(backup_files)} backup deployment history files, loading most recent")
+            with open(backup_files[0], 'r') as f:
+                deployments = json.load(f)
+            logger.info(f"Loaded {len(deployments)} previous deployments from backup file {backup_files[0]}")
+        else:
+            logger.info("No deployment history file found, creating new one")
+            # Create an empty history file
+            with open(DEPLOYMENT_HISTORY_FILE, 'w') as f:
+                json.dump({}, f)
 except Exception as e:
     logger.error(f"Failed to load deployment history: {str(e)}")
 
@@ -99,12 +112,29 @@ def save_inventory():
     except Exception as e:
         logger.error(f"Error saving inventory: {str(e)}")
 
-# Function to save deployment history
+# Function to save deployment history with backup
 def save_deployment_history():
     try:
-        with open(DEPLOYMENTS_HISTORY_FILE, 'w') as f:
+        # Create a backup of the current history file if it exists
+        if os.path.exists(DEPLOYMENT_HISTORY_FILE):
+            timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+            backup_file = os.path.join(DEPLOYMENT_LOGS_DIR, f'deployment_history_{timestamp}.json')
+            with open(DEPLOYMENT_HISTORY_FILE, 'r') as src:
+                with open(backup_file, 'w') as dst:
+                    dst.write(src.read())
+            logger.debug(f"Created backup of deployment history: {backup_file}")
+        
+        # Save the current deployment history
+        with open(DEPLOYMENT_HISTORY_FILE, 'w') as f:
             json.dump(deployments, f)
         logger.info(f"Saved {len(deployments)} deployments to history file")
+        
+        # Clean up old backup files (keep only last 5)
+        backup_files = sorted(glob.glob(os.path.join(DEPLOYMENT_LOGS_DIR, 'deployment_history_*.json')))
+        if len(backup_files) > 5:
+            for old_file in backup_files[:-5]:
+                os.remove(old_file)
+                logger.debug(f"Removed old backup file: {old_file}")
     except Exception as e:
         logger.error(f"Failed to save deployment history: {str(e)}")
 
@@ -121,6 +151,16 @@ def check_ssh_setup():
             # Also check that the .ssh directory has proper permissions
             os.chmod("/root/.ssh", 0o700)
             logger.info("SSH directory permissions set to 700")
+
+            # Check control_path_dir permissions
+            control_path = "/tmp/ansible-ssh"
+            if os.path.exists(control_path):
+                os.chmod(control_path, 0o777)
+                logger.info(f"Ansible SSH control path directory permissions set to 777: {control_path}")
+            else:
+                os.makedirs(control_path, exist_ok=True)
+                os.chmod(control_path, 0o777)
+                logger.info(f"Created Ansible SSH control path directory with permissions 777: {control_path}")
             
             # Test SSH key with ssh-keygen -l
             result = subprocess.run(
@@ -137,8 +177,31 @@ def check_ssh_setup():
     except Exception as e:
         logger.error(f"Error during SSH setup check: {str(e)}")
 
+# Test SSH connection to each VM
+def test_ssh_connections():
+    for vm in inventory.get("vms", []):
+        try:
+            vm_name = vm.get("name")
+            vm_ip = vm.get("ip")
+            if not vm_name or not vm_ip:
+                continue
+                
+            logger.info(f"Testing SSH connection to {vm_name} ({vm_ip})")
+            cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", 
+                  "-i", "/root/.ssh/id_rsa", f"infadm@{vm_ip}", "echo 'SSH Connection Test'"]
+                
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                logger.info(f"SSH connection to {vm_name} ({vm_ip}) successful")
+            else:
+                logger.warning(f"SSH connection to {vm_name} ({vm_ip}) failed: {result.stderr.strip()}")
+        except Exception as e:
+            logger.error(f"Error testing SSH connection to {vm_name}: {str(e)}")
+
 # Run SSH setup check at startup
 check_ssh_setup()
+# Test SSH connections at startup
+test_ssh_connections()
 
 # Serve React app
 @app.route('/', defaults={'path': ''})
@@ -328,16 +391,16 @@ def process_file_deployment(deployment_id):
                 vm = next((v for v in inventory["vms"] if v["name"] == vm_name), None)
                 if vm:
                     # Add ansible_ssh_common_args to disable StrictHostKeyChecking for this connection
-                    f.write(f"{vm_name} ansible_host={vm['ip']} ansible_user=infadm ansible_ssh_private_key_file=/root/.ssh/id_rsa ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'\n")
+                    f.write(f"{vm_name} ansible_host={vm['ip']} ansible_user=infadm ansible_ssh_private_key_file=/root/.ssh/id_rsa ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ControlMaster=auto -o ControlPath=/tmp/ansible-ssh/%h-%p-%r -o ControlPersist=60s'\n")
         
         logger.debug(f"Created Ansible inventory: {inventory_file}")
         log_message(deployment_id, f"Created inventory file with targets: {', '.join(vms)}")
         
-        # Check SSH connection before running playbook (optional but helpful)
+        # Check SSH connection before running playbook
         for vm_name in vms:
             vm = next((v for v in inventory["vms"] if v["name"] == vm_name), None)
             if vm:
-                ssh_check_cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-i", "/root/.ssh/id_rsa", f"infadm@{vm['ip']}", "echo 'SSH Connection Test'"]
+                ssh_check_cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-i", "/root/.ssh/id_rsa", f"infadm@{vm['ip']}", "echo 'SSH Connection Test'"]
                 log_message(deployment_id, f"Testing SSH connection to {vm_name} ({vm['ip']})")
                 
                 try:
@@ -359,12 +422,14 @@ def process_file_deployment(deployment_id):
         # Create ssh control directory to avoid "cannot bind to path" errors
         os.makedirs('/tmp/ansible-ssh', exist_ok=True)
         os.chmod('/tmp/ansible-ssh', 0o777)
-        log_message(deployment_id, "Ensured ansible control path directory exists")
+        log_message(deployment_id, "Ensured ansible control path directory exists with permissions 777")
         
         # Run ansible playbook
         env_vars = os.environ.copy()
         env_vars["ANSIBLE_CONFIG"] = "/etc/ansible/ansible.cfg"
         env_vars["ANSIBLE_HOST_KEY_CHECKING"] = "False"
+        env_vars["ANSIBLE_SSH_CONTROL_PATH"] = "/tmp/ansible-ssh/%h-%p-%r"
+        env_vars["ANSIBLE_SSH_CONTROL_PATH_DIR"] = "/tmp/ansible-ssh"
         
         cmd = ["ansible-playbook", "-i", inventory_file, playbook_file, "-v"]
         
@@ -958,6 +1023,7 @@ if __name__ == '__main__':
     # Ensure required directories exist
     os.makedirs('/tmp/ansible-ssh', exist_ok=True)
     os.chmod('/tmp/ansible-ssh', 0o777)
+    logger.info("Ensured ansible control path directory exists with permissions 777")
     
     # Print SSH key information for debugging
     logger.info("Checking SSH key setup...")

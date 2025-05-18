@@ -36,8 +36,9 @@ RUN apt-get update && \
     chmod 700 /root/.ssh && \
     chmod 777 /tmp/ansible-ssh
 
-# Create directory for fix files
-RUN mkdir -p /app/fixfiles/AllFts
+# Create directory for fix files and ensure proper permissions for ansible control path
+RUN mkdir -p /app/fixfiles/AllFts /tmp/ansible-ssh && \
+    chmod -R 777 /tmp/ansible-ssh
 
 # Expose ports
 EXPOSE 5000
@@ -46,6 +47,8 @@ EXPOSE 5000
 ENV FLASK_APP=backend/app.py
 ENV FLASK_ENV=production
 ENV ANSIBLE_HOST_KEY_CHECKING=False
+ENV ANSIBLE_SSH_CONTROL_PATH=/tmp/ansible-ssh/%h-%p-%r
+ENV ANSIBLE_SSH_CONTROL_PATH_DIR=/tmp/ansible-ssh
 
 # CMD to run the Flask server
 CMD ["python", "backend/app.py"]

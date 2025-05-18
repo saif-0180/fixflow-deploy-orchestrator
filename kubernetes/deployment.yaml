@@ -29,6 +29,8 @@ spec:
               value: "/etc/ansible/ansible.cfg"
             - name: ANSIBLE_SSH_CONTROL_PATH_DIR
               value: "/tmp/ansible-ssh"
+            - name: ANSIBLE_SSH_CONTROL_PATH
+              value: "/tmp/ansible-ssh/%h-%p-%r"
           volumeMounts:
             - name: fix-files-volume
               mountPath: /app/fixfiles
@@ -69,4 +71,5 @@ spec:
           persistentVolumeClaim:
             claimName: app-logs-pvc
         - name: ansible-tmp-volume
-          emptyDir: {}
+          emptyDir:
+            medium: Memory
