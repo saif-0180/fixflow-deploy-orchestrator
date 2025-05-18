@@ -34,19 +34,19 @@ const Index = () => {
               </TabsTrigger>
             </TabsList>
             
-            <TabsContent value="file" className="p-6 bg-[#2A4759] rounded-md">
+            <TabsContent value="file" className="p-6 bg-black rounded-md">
               <FileOperations />
             </TabsContent>
             
-            <TabsContent value="sql" className="p-6 bg-[#2A4759] rounded-md">
+            <TabsContent value="sql" className="p-6 bg-black rounded-md">
               <SqlOperations />
             </TabsContent>
             
-            <TabsContent value="systemctl" className="p-6 bg-[#2A4759] rounded-md">
+            <TabsContent value="systemctl" className="p-6 bg-black rounded-md">
               <SystemctlOperations />
             </TabsContent>
             
-            <TabsContent value="history" className="p-6 bg-[#2A4759] rounded-md">
+            <TabsContent value="history" className="p-6 bg-black rounded-md">
               <DeploymentHistory />
             </TabsContent>
           </Tabs>

@@ -167,13 +167,13 @@ const SqlOperations = () => {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-[#2A4759] mb-4">SQL Deployment</h2>
+      <h2 className="text-2xl font-bold text-[#F79B72] mb-4">SQL Deployment</h2>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="space-y-4">
           <div className="space-y-4">
             <div>
-              <Label htmlFor="sql-ft-select" className="text-[#2A4759]">Select FT</Label>
+              <Label htmlFor="sql-ft-select" className="text-[#F79B72]">Select FT</Label>
               <Select value={selectedFt} onValueChange={setSelectedFt}>
                 <SelectTrigger id="sql-ft-select" className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]">
                   <SelectValue placeholder="Select an FT" className="text-[#2A4759]" />
@@ -187,7 +187,7 @@ const SqlOperations = () => {
             </div>
 
             <div>
-              <Label htmlFor="sql-file-select" className="text-[#2A4759]">Select SQL File</Label>
+              <Label htmlFor="sql-file-select" className="text-[#F79B72]">Select SQL File</Label>
               <Select 
                 value={selectedFile} 
                 onValueChange={setSelectedFile}
@@ -205,7 +205,7 @@ const SqlOperations = () => {
             </div>
 
             <div>
-              <Label htmlFor="db-user-select" className="text-[#2A4759]">Select DB User</Label>
+              <Label htmlFor="db-user-select" className="text-[#F79B72]">Select DB User</Label>
               <Select value={selectedDbUser} onValueChange={setSelectedDbUser}>
                 <SelectTrigger id="db-user-select" className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]">
                   <SelectValue placeholder="Select a database user" className="text-[#2A4759]" />
@@ -219,7 +219,7 @@ const SqlOperations = () => {
             </div>
 
             <div>
-              <Label htmlFor="db-password" className="text-[#2A4759]">DB Password</Label>
+              <Label htmlFor="db-password" className="text-[#F79B72]">DB Password</Label>
               <Input 
                 id="db-password" 
                 type="password"

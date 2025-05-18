@@ -12,7 +12,7 @@ interface LogDisplayProps {
 const LogDisplay: React.FC<LogDisplayProps> = ({ 
   logs, 
   height = "400px", 
-  fixedHeight = false,
+  fixedHeight = true,  // Changed to true by default
   title = "Logs" 
 }) => {
   const logEndRef = useRef<HTMLDivElement>(null);
