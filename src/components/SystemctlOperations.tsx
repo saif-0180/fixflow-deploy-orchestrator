@@ -151,12 +151,12 @@ const SystemctlOperations: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-[#2A4759] mb-4">Systemd Service Management</h2>
+      <h2 className="text-2xl font-bold text-[#F79B72] mb-4">Systemd Service Management</h2>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="space-y-4">
+        <div className="space-y-4 bg-[#EEEEEE] p-4 rounded-md">
           <div>
-            <Label htmlFor="service-select" className="text-[#2A4759]">Select Service</Label>
+            <Label htmlFor="service-select" className="text-[#F79B72]">Select Service</Label>
             <Select value={selectedService} onValueChange={setSelectedService}>
               <SelectTrigger id="service-select" className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]">
                 <SelectValue placeholder="Select a service" className="text-[#2A4759]" />
@@ -170,7 +170,7 @@ const SystemctlOperations: React.FC = () => {
           </div>
 
           <div>
-            <Label htmlFor="operation-select" className="text-[#2A4759]">Select Operation</Label>
+            <Label htmlFor="operation-select" className="text-[#F79B72]">Select Operation</Label>
             <Select value={selectedOperation} onValueChange={setSelectedOperation}>
               <SelectTrigger id="operation-select" className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]">
                 <SelectValue placeholder="Select an operation" className="text-[#2A4759]" />
@@ -187,7 +187,8 @@ const SystemctlOperations: React.FC = () => {
           <VMSelector 
             vms={vms} 
             selectedVMs={selectedVMs} 
-            setSelectedVMs={setSelectedVMs} 
+            setSelectedVMs={setSelectedVMs}
+            selectorId="systemctl" 
           />
 
           <Button 
@@ -199,8 +200,8 @@ const SystemctlOperations: React.FC = () => {
           </Button>
         </div>
 
-        <div className="space-y-4 h-full">
-          <LogDisplay logs={logs} height="400px" title="Systemctl Operation Logs" />
+        <div>
+          <LogDisplay logs={logs} height="400px" fixedHeight={true} title="Systemctl Operation Logs" />
         </div>
       </div>
     </div>

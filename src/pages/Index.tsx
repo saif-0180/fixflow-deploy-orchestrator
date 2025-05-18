@@ -19,34 +19,34 @@ const Index = () => {
         
         <main className="container mx-auto px-4 py-6">
           <Tabs defaultValue="file" className="w-full">
-            <TabsList className="grid w-full grid-cols-4 bg-[#DDDDDD] mb-6">
-              <TabsTrigger value="file" className="data-[state=active]:bg-[#F79B72] data-[state=active]:text-[#2A4759] text-[#2A4759]">
+            <TabsList className="grid w-full grid-cols-4 bg-[#2A4759] mb-6">
+              <TabsTrigger value="file" className="data-[state=active]:bg-[#F79B72] data-[state=active]:text-[#2A4759] text-[#EEEEEE]">
                 File Operations
               </TabsTrigger>
-              <TabsTrigger value="sql" className="data-[state=active]:bg-[#F79B72] data-[state=active]:text-[#2A4759] text-[#2A4759]">
+              <TabsTrigger value="sql" className="data-[state=active]:bg-[#F79B72] data-[state=active]:text-[#2A4759] text-[#EEEEEE]">
                 SQL Operations
               </TabsTrigger>
-              <TabsTrigger value="systemctl" className="data-[state=active]:bg-[#F79B72] data-[state=active]:text-[#2A4759] text-[#2A4759]">
+              <TabsTrigger value="systemctl" className="data-[state=active]:bg-[#F79B72] data-[state=active]:text-[#2A4759] text-[#EEEEEE]">
                 Systemctl Operations
               </TabsTrigger>
-              <TabsTrigger value="history" className="data-[state=active]:bg-[#F79B72] data-[state=active]:text-[#2A4759] text-[#2A4759]">
+              <TabsTrigger value="history" className="data-[state=active]:bg-[#F79B72] data-[state=active]:text-[#2A4759] text-[#EEEEEE]">
                 Deployment History
               </TabsTrigger>
             </TabsList>
             
-            <TabsContent value="file" className="p-6 bg-[#DDDDDD] rounded-md">
+            <TabsContent value="file" className="p-6 bg-[#2A4759] rounded-md">
               <FileOperations />
             </TabsContent>
             
-            <TabsContent value="sql" className="p-6 bg-[#DDDDDD] rounded-md">
+            <TabsContent value="sql" className="p-6 bg-[#2A4759] rounded-md">
               <SqlOperations />
             </TabsContent>
             
-            <TabsContent value="systemctl" className="p-6 bg-[#DDDDDD] rounded-md">
+            <TabsContent value="systemctl" className="p-6 bg-[#2A4759] rounded-md">
               <SystemctlOperations />
             </TabsContent>
             
-            <TabsContent value="history" className="p-6 bg-[#DDDDDD] rounded-md">
+            <TabsContent value="history" className="p-6 bg-[#2A4759] rounded-md">
               <DeploymentHistory />
             </TabsContent>
           </Tabs>

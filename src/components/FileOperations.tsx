@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -215,15 +214,22 @@ const FileOperations: React.FC = () => {
     const eventSource = new EventSource(`/api/command/${shellCommandId}/logs`);
     
     eventSource.onmessage = (event) => {
-      const logData = JSON.parse(event.data);
-      setShellLogs(prev => [...prev, logData.message]);
-      
-      if (logData.status === 'completed' || logData.status === 'failed') {
-        eventSource.close();
+      try {
+        const logData = JSON.parse(event.data);
+        setShellLogs(prev => [...prev, logData.message]);
+        
+        if (logData.status === 'completed' || logData.status === 'failed') {
+          eventSource.close();
+        }
+      } catch (error) {
+        console.error("Error processing shell command log:", error);
+        setShellLogs(prev => [...prev, "Error processing log data"]);
       }
     };
 
-    eventSource.onerror = () => {
+    eventSource.onerror = (error) => {
+      console.error("EventSource error:", error);
+      setShellLogs(prev => [...prev, "Connection error. Please try again."]);
       eventSource.close();
     };
 
@@ -316,18 +322,23 @@ const FileOperations: React.FC = () => {
     shellCommandMutation.mutate();
   };
 
+  // Calculate the height for file deployment section
+  const fileDeploymentHeight = "345px"; 
+  // Calculate the height for shell command section
+  const shellCommandHeight = "485px";
+
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-[#2A4759] mb-4">File Operations</h2>
+      <h2 className="text-2xl font-bold text-[#F79B72] mb-4">File Operations</h2>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="space-y-6">
           {/* File Deployment Section */}
           <div className="space-y-4 bg-[#EEEEEE] p-4 rounded-md">
-            <h3 className="text-lg font-medium text-[#2A4759]">File Deployment</h3>
+            <h3 className="text-lg font-medium text-[#F79B72]">File Deployment</h3>
 
             <div>
-              <Label htmlFor="ft-select" className="text-[#2A4759]">Select FT</Label>
+              <Label htmlFor="ft-select" className="text-[#F79B72]">Select FT</Label>
               <Select value={selectedFt} onValueChange={setSelectedFt}>
                 <SelectTrigger id="ft-select" className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]">
                   <SelectValue placeholder="Select an FT" className="text-[#2A4759]" />
@@ -341,7 +352,7 @@ const FileOperations: React.FC = () => {
             </div>
 
             <div>
-              <Label htmlFor="file-select" className="text-[#2A4759]">Select File</Label>
+              <Label htmlFor="file-select" className="text-[#F79B72]">Select File</Label>
               <Select 
                 value={selectedFile} 
                 onValueChange={setSelectedFile}
@@ -359,7 +370,7 @@ const FileOperations: React.FC = () => {
             </div>
 
             <div>
-              <Label htmlFor="user-select" className="text-[#2A4759]">Select User</Label>
+              <Label htmlFor="user-select" className="text-[#F79B72]">Select User</Label>
               <Select value={selectedUser} onValueChange={setSelectedUser}>
                 <SelectTrigger id="user-select" className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]">
                   <SelectValue placeholder="Select a user" className="text-[#2A4759]" />
@@ -372,7 +383,7 @@ const FileOperations: React.FC = () => {
             </div>
 
             <div>
-              <Label htmlFor="target-path" className="text-[#2A4759]">Target Path</Label>
+              <Label htmlFor="target-path" className="text-[#F79B72]">Target Path</Label>
               <Input 
                 id="target-path" 
                 value={targetPath} 
@@ -388,13 +399,14 @@ const FileOperations: React.FC = () => {
                 checked={useSudo} 
                 onCheckedChange={(checked) => setUseSudo(checked === true)}
               />
-              <Label htmlFor="sudo" className="text-[#2A4759]">Use sudo</Label>
+              <Label htmlFor="sudo" className="text-[#F79B72]">Use sudo</Label>
             </div>
 
             <VMSelector 
               vms={vms} 
               selectedVMs={selectedVMs} 
-              setSelectedVMs={setSelectedVMs} 
+              setSelectedVMs={setSelectedVMs}
+              selectorId="file-deployment" 
             />
 
             <div className="flex space-x-2">
@@ -418,10 +430,10 @@ const FileOperations: React.FC = () => {
           
           {/* Shell Command Section */}
           <div className="space-y-4 bg-[#EEEEEE] p-4 rounded-md">
-            <h3 className="text-lg font-medium text-[#2A4759]">Shell Command</h3>
+            <h3 className="text-lg font-medium text-[#F79B72]">Shell Command</h3>
             
             <div>
-              <Label htmlFor="shell-user-select" className="text-[#2A4759]">Select User</Label>
+              <Label htmlFor="shell-user-select" className="text-[#F79B72]">Select User</Label>
               <Select value={shellSelectedUser} onValueChange={setShellSelectedUser}>
                 <SelectTrigger id="shell-user-select" className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]">
                   <SelectValue placeholder="Select a user" className="text-[#2A4759]" />
@@ -434,7 +446,7 @@ const FileOperations: React.FC = () => {
             </div>
             
             <div>
-              <Label htmlFor="shell-target-path" className="text-[#2A4759]">Default User Home Path</Label>
+              <Label htmlFor="shell-target-path" className="text-[#F79B72]">Default User Home Path</Label>
               <Input 
                 id="shell-target-path" 
                 value={shellTargetPath} 
@@ -445,7 +457,7 @@ const FileOperations: React.FC = () => {
             </div>
             
             <div>
-              <Label htmlFor="shell-working-dir" className="text-[#2A4759]">Command Working Directory</Label>
+              <Label htmlFor="shell-working-dir" className="text-[#F79B72]">Command Working Directory</Label>
               <Input 
                 id="shell-working-dir" 
                 value={shellWorkingDir} 
@@ -456,7 +468,7 @@ const FileOperations: React.FC = () => {
             </div>
             
             <div>
-              <Label htmlFor="shell-command" className="text-[#2A4759]">Command (chmod, chown, etc.)</Label>
+              <Label htmlFor="shell-command" className="text-[#F79B72]">Command (chmod, chown, etc.)</Label>
               <Input 
                 id="shell-command" 
                 value={shellCommand} 
@@ -472,13 +484,14 @@ const FileOperations: React.FC = () => {
                 checked={shellUseSudo} 
                 onCheckedChange={(checked) => setShellUseSudo(checked === true)}
               />
-              <Label htmlFor="shell-sudo" className="text-[#2A4759]">Use sudo</Label>
+              <Label htmlFor="shell-sudo" className="text-[#F79B72]">Use sudo</Label>
             </div>
             
             <VMSelector 
               vms={vms} 
               selectedVMs={shellSelectedVMs} 
-              setSelectedVMs={setShellSelectedVMs} 
+              setSelectedVMs={setShellSelectedVMs}
+              selectorId="shell-command" 
             />
 
             <Button 
@@ -491,16 +504,26 @@ const FileOperations: React.FC = () => {
           </div>
         </div>
         
-        {/* Logs Section - Adjusted to align with their respective operations */}
+        {/* Logs Section - Aligned to match respective operation sections */}
         <div className="space-y-6">
           {/* File Deployment Logs */}
           <div>
-            <LogDisplay logs={fileLogs} height="345px" title="File Deployment Logs" />
+            <LogDisplay 
+              logs={fileLogs} 
+              height={fileDeploymentHeight} 
+              fixedHeight={true}
+              title="File Deployment Logs" 
+            />
           </div>
           
           {/* Shell Command Logs */}
           <div>
-            <LogDisplay logs={shellLogs} height="485px" title="Shell Command Logs" />
+            <LogDisplay 
+              logs={shellLogs} 
+              height={shellCommandHeight} 
+              fixedHeight={true}
+              title="Shell Command Logs" 
+            />
           </div>
         </div>
       </div>

@@ -7,9 +7,15 @@ interface VMSelectorProps {
   vms: string[];
   selectedVMs: string[];
   setSelectedVMs: React.Dispatch<React.SetStateAction<string[]>>;
+  selectorId?: string; // Add a unique ID for each VM selector instance
 }
 
-const VMSelector: React.FC<VMSelectorProps> = ({ vms, selectedVMs, setSelectedVMs }) => {
+const VMSelector: React.FC<VMSelectorProps> = ({ 
+  vms, 
+  selectedVMs, 
+  setSelectedVMs, 
+  selectorId = "default" 
+}) => {
   const handleSelectAll = () => {
     if (selectedVMs.length === vms.length) {
       setSelectedVMs([]);
@@ -32,22 +38,22 @@ const VMSelector: React.FC<VMSelectorProps> = ({ vms, selectedVMs, setSelectedVM
     <div className="space-y-4">
       <div className="flex items-center space-x-2">
         <Checkbox
-          id="select-all"
+          id={`select-all-${selectorId}`}
           checked={selectedVMs.length === vms.length && vms.length > 0}
           onCheckedChange={handleSelectAll}
         />
-        <Label htmlFor="select-all" className="text-[#2A4759]">Select All VMs</Label>
+        <Label htmlFor={`select-all-${selectorId}`} className="text-[#F79B72]">Select All VMs</Label>
       </div>
       
       <div className="grid grid-cols-3 gap-2">
         {vms.map((vm) => (
-          <div key={vm} className="flex items-center space-x-2">
+          <div key={`${selectorId}-${vm}`} className="flex items-center space-x-2">
             <Checkbox
-              id={vm}
+              id={`${selectorId}-${vm}`}
               checked={selectedVMs.includes(vm)}
               onCheckedChange={() => handleToggleVM(vm)}
             />
-            <Label htmlFor={vm} className="text-[#2A4759]">{vm}</Label>
+            <Label htmlFor={`${selectorId}-${vm}`} className="text-[#F79B72]">{vm}</Label>
           </div>
         ))}
       </div>

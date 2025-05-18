@@ -5,10 +5,16 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 interface LogDisplayProps {
   logs: string[];
   height?: string;
+  fixedHeight?: boolean;
   title?: string;
 }
 
-const LogDisplay: React.FC<LogDisplayProps> = ({ logs, height = "400px", title = "Logs" }) => {
+const LogDisplay: React.FC<LogDisplayProps> = ({ 
+  logs, 
+  height = "400px", 
+  fixedHeight = false,
+  title = "Logs" 
+}) => {
   const logEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -19,10 +25,14 @@ const LogDisplay: React.FC<LogDisplayProps> = ({ logs, height = "400px", title =
 
   return (
     <div className="space-y-2 h-full">
-      <h3 className="font-medium text-[#2A4759]">{title}</h3>
+      <h3 className="font-medium text-[#F79B72]">{title}</h3>
       <div 
         className="bg-black rounded-md p-4 overflow-y-auto font-mono text-sm" 
-        style={{ height, maxHeight: height }}
+        style={{ 
+          height: fixedHeight ? height : height, 
+          maxHeight: height,
+          minHeight: fixedHeight ? height : "auto"
+        }}
       >
         {logs.length === 0 ? (
           <p className="text-gray-500">No logs available. Start a deployment to see logs here.</p>
