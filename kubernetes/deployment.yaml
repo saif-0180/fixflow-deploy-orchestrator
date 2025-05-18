@@ -25,6 +25,10 @@ spec:
               value: "/app/logs/application.log"
             - name: DEPLOYMENT_LOGS_DIR
               value: "/app/logs"
+            - name: ANSIBLE_CONFIG
+              value: "/etc/ansible/ansible.cfg"
+            - name: ANSIBLE_SSH_CONTROL_PATH_DIR
+              value: "/tmp/ansible-ssh"
           volumeMounts:
             - name: fix-files-volume
               mountPath: /app/fixfiles
@@ -36,6 +40,17 @@ spec:
               mountPath: /app/inventory
             - name: app-logs-volume
               mountPath: /app/logs
+            - name: ansible-tmp-volume
+              mountPath: /tmp/ansible-ssh
+              
+          # Add lifecycle hook to ensure SSH directory permissions
+          lifecycle:
+            postStart:
+              exec:
+                command: 
+                  - "/bin/sh"
+                  - "-c"
+                  - "chmod 700 /root/.ssh && chmod 600 /root/.ssh/id_rsa && chmod 777 /tmp/ansible-ssh"
       volumes:
         - name: fix-files-volume
           persistentVolumeClaim:
@@ -47,10 +62,11 @@ spec:
         - name: ansible-config-volume
           configMap:
             name: ansible-config
-            defaultMode: 0644
         - name: inventory-volume
           configMap:
             name: inventory-config
         - name: app-logs-volume
           persistentVolumeClaim:
             claimName: app-logs-pvc
+        - name: ansible-tmp-volume
+          emptyDir: {}

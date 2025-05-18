@@ -14,6 +14,8 @@ data:
     become = True
     become_method = sudo
     become_user = infadm
+    private_key_file = /root/.ssh/id_rsa
+    control_path_dir = /tmp/ansible-ssh
     
     [privilege_escalation]
     become = True
@@ -23,3 +25,4 @@ data:
     [ssh_connection]
     pipelining = True
     control_path = /tmp/ansible-ssh-%%h-%%p-%%r
+    ssh_args = -o ControlMaster=auto -o ControlPersist=60s -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null

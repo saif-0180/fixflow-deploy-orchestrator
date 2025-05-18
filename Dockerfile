@@ -27,11 +27,14 @@ COPY --from=frontend-build /app/dist /app/frontend/dist
 COPY --from=backend-build /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY backend /app/backend
 
-# Install ansible
+# Install ansible and SSH dependencies
 RUN apt-get update && \
     apt-get install -y ansible openssh-client sshpass && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* && \
+    mkdir -p /root/.ssh /app/fixfiles/AllFts /app/logs /tmp/ansible-ssh && \
+    chmod 700 /root/.ssh && \
+    chmod 777 /tmp/ansible-ssh
 
 # Create directory for fix files
 RUN mkdir -p /app/fixfiles/AllFts
@@ -42,6 +45,7 @@ EXPOSE 5000
 # Set environment variables
 ENV FLASK_APP=backend/app.py
 ENV FLASK_ENV=production
+ENV ANSIBLE_HOST_KEY_CHECKING=False
 
 # CMD to run the Flask server
 CMD ["python", "backend/app.py"]
