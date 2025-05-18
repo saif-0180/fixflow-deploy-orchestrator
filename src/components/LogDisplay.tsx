@@ -12,7 +12,7 @@ interface LogDisplayProps {
 const LogDisplay: React.FC<LogDisplayProps> = ({ 
   logs, 
   height = "400px", 
-  fixedHeight = true,  // Changed to true by default
+  fixedHeight = true,  // Default to fixed height
   title = "Logs" 
 }) => {
   const logEndRef = useRef<HTMLDivElement>(null);
@@ -26,10 +26,10 @@ const LogDisplay: React.FC<LogDisplayProps> = ({
   return (
     <div className="space-y-2 h-full">
       <h3 className="font-medium text-[#F79B72]">{title}</h3>
-      <div 
-        className="bg-black rounded-md p-4 overflow-y-auto font-mono text-sm" 
+      <ScrollArea 
+        className="bg-black rounded-md p-4 font-mono text-sm" 
         style={{ 
-          height: fixedHeight ? height : height, 
+          height: fixedHeight ? height : "auto", 
           maxHeight: height,
           minHeight: fixedHeight ? height : "auto"
         }}
@@ -50,7 +50,7 @@ const LogDisplay: React.FC<LogDisplayProps> = ({
           ))
         )}
         <div ref={logEndRef} />
-      </div>
+      </ScrollArea>
     </div>
   );
 };

@@ -21,6 +21,10 @@ spec:
           env:
             - name: ANSIBLE_HOST_KEY_CHECKING
               value: "false"
+            - name: LOG_FILE_PATH
+              value: "/app/logs/application.log"
+            - name: DEPLOYMENT_LOGS_DIR
+              value: "/app/logs"
           volumeMounts:
             - name: fix-files-volume
               mountPath: /app/fixfiles
@@ -30,6 +34,8 @@ spec:
               mountPath: /etc/ansible
             - name: inventory-volume
               mountPath: /app/inventory
+            - name: app-logs-volume
+              mountPath: /app/logs
       volumes:
         - name: fix-files-volume
           persistentVolumeClaim:
@@ -45,3 +51,6 @@ spec:
         - name: inventory-volume
           configMap:
             name: inventory-config
+        - name: app-logs-volume
+          persistentVolumeClaim:
+            claimName: app-logs-pvc

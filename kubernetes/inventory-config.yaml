@@ -1,0 +1,33 @@
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: inventory-config
+data:
+  inventory.ini: |
+    [batch]
+    batch1 ansible_host=192.168.1.10
+    batch2 ansible_host=192.168.1.11
+    
+    [imdg]
+    imdg1 ansible_host=192.168.1.20
+    imdg2 ansible_host=192.168.1.21
+    
+    [all:vars]
+    ansible_user=infadm
+    ansible_ssh_private_key_file=/root/.ssh/id_rsa
+    ansible_become=yes
+    ansible_become_method=sudo
+    
+  inventory.json: |
+    {
+      "vms": [
+        {"name": "batch1", "type": "batch", "ip": "192.168.1.10"},
+        {"name": "batch2", "type": "batch", "ip": "192.168.1.11"},
+        {"name": "imdg1", "type": "imdg", "ip": "192.168.1.20"},
+        {"name": "imdg2", "type": "imdg", "ip": "192.168.1.21"}
+      ],
+      "users": ["infadm", "abpwrk1"],
+      "db_users": ["postgres", "dbadmin"],
+      "systemd_services": ["hazelcast", "kafka", "zookeeper", "airflow-scheduler"]
+    }

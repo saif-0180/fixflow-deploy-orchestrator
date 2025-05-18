@@ -1,21 +1,16 @@
 
 import React from 'react';
-import { Checkbox } from "./ui/checkbox";
-import { Label } from "./ui/label";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 
 interface VMSelectorProps {
   vms: string[];
   selectedVMs: string[];
   setSelectedVMs: React.Dispatch<React.SetStateAction<string[]>>;
-  selectorId?: string; // Add a unique ID for each VM selector instance
+  selectorId: string; // Added unique ID for each selector
 }
 
-const VMSelector: React.FC<VMSelectorProps> = ({ 
-  vms, 
-  selectedVMs, 
-  setSelectedVMs, 
-  selectorId = "default" 
-}) => {
+const VMSelector: React.FC<VMSelectorProps> = ({ vms, selectedVMs, setSelectedVMs, selectorId }) => {
   const handleSelectAll = () => {
     if (selectedVMs.length === vms.length) {
       setSelectedVMs([]);
@@ -24,38 +19,46 @@ const VMSelector: React.FC<VMSelectorProps> = ({
     }
   };
 
-  const handleToggleVM = (vm: string) => {
-    setSelectedVMs((prev: string[]) => {
-      if (prev.includes(vm)) {
-        return prev.filter(item => item !== vm);
-      } else {
-        return [...prev, vm];
-      }
-    });
+  const handleVMSelection = (vm: string) => {
+    if (selectedVMs.includes(vm)) {
+      setSelectedVMs(selectedVMs.filter(v => v !== vm));
+    } else {
+      setSelectedVMs([...selectedVMs, vm]);
+    }
   };
 
+  const allSelected = vms.length > 0 && selectedVMs.length === vms.length;
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center space-x-2">
-        <Checkbox
-          id={`select-all-${selectorId}`}
-          checked={selectedVMs.length === vms.length && vms.length > 0}
-          onCheckedChange={handleSelectAll}
-        />
-        <Label htmlFor={`select-all-${selectorId}`} className="text-[#F79B72]">Select All VMs</Label>
-      </div>
+    <div>
+      <Label htmlFor={`vm-select-${selectorId}`} className="text-[#F79B72] block mb-2">Select VMs</Label>
       
-      <div className="grid grid-cols-3 gap-2">
-        {vms.map((vm) => (
-          <div key={`${selectorId}-${vm}`} className="flex items-center space-x-2">
-            <Checkbox
-              id={`${selectorId}-${vm}`}
-              checked={selectedVMs.includes(vm)}
-              onCheckedChange={() => handleToggleVM(vm)}
-            />
-            <Label htmlFor={`${selectorId}-${vm}`} className="text-[#F79B72]">{vm}</Label>
-          </div>
-        ))}
+      <div className="bg-[#DDDDDD] border border-[#2A4759] rounded-md p-2">
+        <div className="flex items-center space-x-2 mb-2 pb-2 border-b border-[#2A4759]">
+          <Checkbox 
+            id={`select-all-${selectorId}`}
+            checked={allSelected} 
+            onCheckedChange={handleSelectAll}
+          />
+          <Label htmlFor={`select-all-${selectorId}`} className="text-[#2A4759] cursor-pointer">
+            Select All VMs
+          </Label>
+        </div>
+        
+        <div className="grid grid-cols-2 gap-2">
+          {vms.map((vm) => (
+            <div key={`${vm}-${selectorId}`} className="flex items-center space-x-2">
+              <Checkbox 
+                id={`${vm}-${selectorId}`}
+                checked={selectedVMs.includes(vm)} 
+                onCheckedChange={() => handleVMSelection(vm)}
+              />
+              <Label htmlFor={`${vm}-${selectorId}`} className="text-[#2A4759] cursor-pointer">
+                {vm}
+              </Label>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
