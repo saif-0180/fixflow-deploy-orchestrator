@@ -32,13 +32,14 @@ RUN apt-get update && \
     apt-get install -y ansible openssh-client sshpass procps && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
-    mkdir -p /root/.ssh /app/fixfiles/AllFts /app/logs /tmp/ansible-ssh && \
+    mkdir -p /root/.ssh /app/fixfiles/AllFts /app/logs /tmp/ansible-ssh /app/ssh-keys && \
     chmod 700 /root/.ssh && \
     chmod -R 777 /tmp/ansible-ssh
 
 # Create directory for fix files and ensure proper permissions for ansible control path
-RUN mkdir -p /app/fixfiles/AllFts /tmp/ansible-ssh /app/ssh-keys && \
-    chmod -R 777 /tmp/ansible-ssh
+RUN mkdir -p /app/fixfiles/AllFts /tmp/ansible-ssh /app/ssh-keys /app/logs && \
+    chmod -R 777 /tmp/ansible-ssh && \
+    chmod -R 777 /app/logs
 
 # Copy entrypoint script
 COPY entrypoint.sh /entrypoint.sh
@@ -54,6 +55,8 @@ ENV ANSIBLE_HOST_KEY_CHECKING=False
 ENV ANSIBLE_SSH_CONTROL_PATH=/tmp/ansible-ssh/%h-%p-%r
 ENV ANSIBLE_SSH_CONTROL_PATH_DIR=/tmp/ansible-ssh
 ENV PYTHONUNBUFFERED=1
+ENV LOG_FILE_PATH=/app/logs/application.log
+ENV DEPLOYMENT_LOGS_DIR=/app/logs
 
 # Start with entrypoint script
 ENTRYPOINT ["/entrypoint.sh"]

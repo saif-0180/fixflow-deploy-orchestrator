@@ -34,5 +34,5 @@ data:
       ],
       "users": ["infadm", "abpwrk1", "root"],
       "db_users": ["postgres", "dbadmin"],
-      "systemd_services": ["hazelcast", "kafka", "zookeeper", "airflow-scheduler"]
+      "systemd_services": ["hazelcast", "kafka", "zookeeper", "airflow-scheduler", "docker.service"]
     }
