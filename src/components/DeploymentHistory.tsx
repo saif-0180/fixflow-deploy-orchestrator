@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,7 +7,6 @@ import { useToast } from "@/hooks/use-toast";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import LogDisplay from '@/components/LogDisplay';
-import logger from '@/utils/logger';
 import { Loader2 } from 'lucide-react';
 
 interface Deployment {
@@ -34,103 +34,78 @@ const DeploymentHistory: React.FC = () => {
   const { data: deployments = [], refetch: refetchDeployments, isLoading: isLoadingDeployments } = useQuery({
     queryKey: ['deployment-history'],
     queryFn: async () => {
-      logger.info('Fetching deployment history');
       try {
         const response = await fetch('/api/deployments/history');
         if (!response.ok) {
           const errorText = await response.text();
-          logger.error(`Failed to fetch deployment history: ${errorText}`);
+          console.error(`Failed to fetch deployment history: ${errorText}`);
           throw new Error('Failed to fetch deployment history');
         }
         const data = await response.json();
         return data as Deployment[];
       } catch (error) {
-        logger.error(`Error in history fetch: ${error}`);
-        throw error;
-      }
-    }
-  });
-
-  // Fetch logs for selected deployment
-  const { isLoading: isLoadingLogs, refetch: refetchLogs } = useQuery({
-    queryKey: ['deployment-logs', selectedDeploymentId],
-    queryFn: async () => {
-      if (!selectedDeploymentId) {
-        return { logs: [] };
-      }
-      
-      logger.info(`Fetching logs for deployment: ${selectedDeploymentId}`);
-      try {
-        const response = await fetch(`/api/deploy/${selectedDeploymentId}/logs`);
-        if (!response.ok) {
-          const errorText = await response.text();
-          logger.error(`Failed to fetch logs: ${errorText}`);
-          throw new Error('Failed to fetch logs');
-        }
-        return await response.json();
-      } catch (error) {
-        logger.error(`Error fetching logs: ${error}`);
+        console.error(`Error in history fetch: ${error}`);
         throw error;
       }
     },
-    enabled: !!selectedDeploymentId,
-    meta: {
-      onSuccess: (data: any) => {
-        if (data.logs && data.logs.length > 0) {
-          setDeploymentLogs(data.logs);
-        } else {
-          // If no logs in response, check if the selected deployment has logs
-          const selectedDeployment = deployments.find(d => d.id === selectedDeploymentId);
-          if (selectedDeployment?.logs && selectedDeployment.logs.length > 0) {
-            setDeploymentLogs(selectedDeployment.logs);
-          } else {
-            setDeploymentLogs(["No logs available for this deployment"]);
-          }
-        }
-      },
-      onError: () => {
-        toast({
-          title: "Error",
-          description: "Failed to fetch logs for this deployment",
-          variant: "destructive",
-        });
-        setDeploymentLogs(["Error loading logs. Please try again."]);
-      }
-    }
+    staleTime: 3000, // Consider data fresh for 3 seconds to reduce duplicate requests
   });
 
-  // Use effect to handle success and error cases for the logs query
+  // Function to fetch logs for a specific deployment
+  const fetchDeploymentLogs = async (deploymentId: string) => {
+    try {
+      const response = await fetch(`/api/deploy/${deploymentId}/logs`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch logs');
+      }
+      const data = await response.json();
+      
+      if (data.logs && data.logs.length > 0) {
+        setDeploymentLogs(data.logs);
+        return data.logs;
+      } else {
+        // If no logs in response, check if the selected deployment has logs
+        const selectedDeployment = deployments.find(d => d.id === deploymentId);
+        if (selectedDeployment?.logs && selectedDeployment.logs.length > 0) {
+          setDeploymentLogs(selectedDeployment.logs);
+          return selectedDeployment.logs;
+        } else {
+          setDeploymentLogs(["No logs available for this deployment"]);
+          return ["No logs available for this deployment"];
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching logs:', error);
+      setDeploymentLogs(["Error loading logs. Please try again."]);
+      toast({
+        title: "Error",
+        description: "Failed to fetch logs for this deployment",
+        variant: "destructive",
+      });
+      return ["Error loading logs. Please try again."];
+    }
+  };
+
+  // Effect to load logs when a deployment is selected
   useEffect(() => {
     if (selectedDeploymentId) {
-      refetchLogs().then((result) => {
-        if (result.isSuccess && result.data) {
-          if (result.data.logs && result.data.logs.length > 0) {
-            setDeploymentLogs(result.data.logs);
-          } else {
-            // If no logs in response, check if the selected deployment has logs
-            const selectedDeployment = deployments.find(d => d.id === selectedDeploymentId);
-            if (selectedDeployment?.logs && selectedDeployment.logs.length > 0) {
-              setDeploymentLogs(selectedDeployment.logs);
-            } else {
-              setDeploymentLogs(["No logs available for this deployment"]);
-            }
-          }
-        } else if (result.isError) {
-          toast({
-            title: "Error",
-            description: "Failed to fetch logs for this deployment",
-            variant: "destructive",
-          });
-          setDeploymentLogs(["Error loading logs. Please try again."]);
-        }
-      });
+      fetchDeploymentLogs(selectedDeploymentId);
+      
+      // Set up polling for logs if the deployment is still running
+      const selectedDeployment = deployments.find(d => d.id === selectedDeploymentId);
+      if (selectedDeployment && selectedDeployment.status === 'running') {
+        const interval = setInterval(() => {
+          fetchDeploymentLogs(selectedDeploymentId);
+        }, 2000);
+        
+        return () => clearInterval(interval);
+      }
     }
-  }, [selectedDeploymentId, deployments, refetchLogs, toast]);
+  }, [selectedDeploymentId, deployments, toast]);
 
   // Clear logs mutation
   const clearLogsMutation = useMutation({
     mutationFn: async (days: number) => {
-      logger.info(`Clearing deployment logs older than ${days} days`);
       const response = await fetch('/api/deployments/clear', {
         method: 'POST',
         headers: {
@@ -141,7 +116,7 @@ const DeploymentHistory: React.FC = () => {
       
       if (!response.ok) {
         const errorText = await response.text();
-        logger.error(`Failed to clear logs: ${errorText}`);
+        console.error(`Failed to clear logs: ${errorText}`);
         throw new Error('Failed to clear logs');
       }
       
@@ -168,7 +143,6 @@ const DeploymentHistory: React.FC = () => {
   // Rollback mutation
   const rollbackMutation = useMutation({
     mutationFn: async (deploymentId: string) => {
-      logger.info(`Rolling back deployment: ${deploymentId}`);
       const response = await fetch(`/api/deploy/${deploymentId}/rollback`, {
         method: 'POST',
         headers: {
@@ -178,7 +152,7 @@ const DeploymentHistory: React.FC = () => {
       
       if (!response.ok) {
         const errorText = await response.text();
-        logger.error(`Failed to rollback: ${errorText}`);
+        console.error(`Failed to rollback: ${errorText}`);
         throw new Error('Failed to rollback deployment');
       }
       
@@ -210,9 +184,10 @@ const DeploymentHistory: React.FC = () => {
     }
   }, [deployments, selectedDeploymentId]);
 
-  // Force refresh deployments on initial load
+  // Force refresh deployments on initial load and set up periodic refresh
   useEffect(() => {
     refetchDeployments();
+    
     // Set up periodic refresh every 10 seconds
     const intervalId = setInterval(() => {
       refetchDeployments();
@@ -221,11 +196,7 @@ const DeploymentHistory: React.FC = () => {
     return () => clearInterval(intervalId);
   }, [refetchDeployments]);
 
-  // Extract selected deployment for display
-  const selectedDeployment = selectedDeploymentId 
-    ? deployments.find(d => d.id === selectedDeploymentId) 
-    : null;
-
+  // Format deployment summary for display
   const formatDeploymentSummary = (deployment: Deployment): string => {
     switch (deployment.type) {
       case 'file':
@@ -243,7 +214,9 @@ const DeploymentHistory: React.FC = () => {
     }
   };
 
-  const handleClearLogs = () => {
+  const handleClearLogs = (e: React.FormEvent) => {
+    e.preventDefault(); // Prevent form submission which causes page reload
+    
     if (clearDays < 0) {
       toast({
         title: "Invalid Input",
@@ -309,7 +282,7 @@ const DeploymentHistory: React.FC = () => {
                 )}
               </div>
               
-              <div className="mt-4 flex items-center space-x-2">
+              <form onSubmit={handleClearLogs} className="mt-4 flex items-center space-x-2">
                 <Label htmlFor="clear-days" className="text-[#F79B72]">Days to keep:</Label>
                 <Input 
                   id="clear-days" 
@@ -319,19 +292,20 @@ const DeploymentHistory: React.FC = () => {
                   className="w-20 bg-[#1a2b42] border-[#EEEEEE] text-[#EEEEEE]"
                 />
                 <Button 
-                  onClick={handleClearLogs} 
+                  type="submit"
                   disabled={clearLogsMutation.isPending}
                   className="bg-[#F79B72] text-[#2A4759] hover:bg-[#F79B72]/80"
                 >
                   {clearLogsMutation.isPending ? "Clearing..." : "Clear Logs"}
                 </Button>
                 <Button
+                  type="button"
                   onClick={() => refetchDeployments()}
                   className="bg-[#2A4759] text-white hover:bg-[#2A4759]/80 ml-auto"
                 >
                   Refresh
                 </Button>
-              </div>
+              </form>
             </CardContent>
           </Card>
         </div>
@@ -339,18 +313,19 @@ const DeploymentHistory: React.FC = () => {
         {/* Deployment Details */}
         <div className="space-y-4">
           <LogDisplay 
-            logs={selectedDeployment?.logs || deploymentLogs} 
+            logs={deploymentLogs} 
             height="400px" 
-            title={selectedDeployment 
-              ? `Deployment Details - ${formatDeploymentSummary(selectedDeployment)}` 
+            title={selectedDeploymentId 
+              ? `Deployment Details - ${formatDeploymentSummary(deployments.find(d => d.id === selectedDeploymentId) || { type: 'unknown', status: 'unknown' } as Deployment)}` 
               : "Select a deployment to view details"
             } 
           />
           
-          {selectedDeployment && selectedDeployment.type === 'file' && selectedDeployment.status === 'success' && (
+          {selectedDeploymentId && deployments.find(d => d.id === selectedDeploymentId)?.type === 'file' && 
+           deployments.find(d => d.id === selectedDeploymentId)?.status === 'success' && (
             <div className="flex justify-end">
               <Button 
-                onClick={() => handleRollback(selectedDeployment.id)}
+                onClick={() => handleRollback(selectedDeploymentId)}
                 disabled={rollbackMutation.isPending}
                 className="bg-[#2A4759] text-white hover:bg-[#2A4759]/80"
               >
