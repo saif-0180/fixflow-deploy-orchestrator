@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { useQuery, useMutation, QueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { 
   Select, 
   SelectContent, 
@@ -50,6 +50,14 @@ const SystemctlOperations: React.FC = () => {
   // Systemctl operation mutation
   const systemctlMutation = useMutation({
     mutationFn: async () => {
+      // Log the request data for debugging
+      console.log("Systemctl request:", {
+        service: selectedService,
+        operation: selectedOperation,
+        vms: selectedVMs,
+        sudo: useSudo
+      });
+      
       const response = await fetch('/api/systemd/operation', {
         method: 'POST',
         headers: {
@@ -78,10 +86,11 @@ const SystemctlOperations: React.FC = () => {
         description: `Systemctl ${selectedOperation} operation has been initiated.`,
       });
       
-      // Start polling for logs
+      // Start polling for logs immediately
       startPollingLogs(data.deploymentId);
     },
     onError: (error) => {
+      console.error("Systemctl operation error:", error);
       toast({
         title: "Operation Failed",
         description: error instanceof Error ? error.message : "Unknown error occurred",
@@ -96,6 +105,7 @@ const SystemctlOperations: React.FC = () => {
     
     // Start with a clear log display
     setLogs([]);
+    console.log(`Starting to poll logs for deployment ${id}`);
     
     // Set up polling interval
     const pollInterval = setInterval(async () => {
@@ -106,12 +116,15 @@ const SystemctlOperations: React.FC = () => {
         }
         
         const data = await response.json();
+        console.log(`Received logs for ${id}:`, data);
+        
         if (data.logs) {
           setLogs(data.logs);
         }
         
         // Stop polling if operation is complete
         if (data.status !== 'running' && data.status !== 'pending') {
+          console.log(`Deployment ${id} is complete with status: ${data.status}`);
           clearInterval(pollInterval);
         }
       } catch (error) {
@@ -120,10 +133,7 @@ const SystemctlOperations: React.FC = () => {
       }
     }, 1000); // Poll every second
     
-    // Clean up on unmount
-    return () => {
-      clearInterval(pollInterval);
-    };
+    return () => clearInterval(pollInterval);
   };
 
   // Add a useEffect to fetch VMs
@@ -179,6 +189,16 @@ const SystemctlOperations: React.FC = () => {
       return;
     }
 
+    // Validate the operation
+    if (!['status', 'start', 'stop', 'restart'].includes(selectedOperation)) {
+      toast({
+        title: "Validation Error",
+        description: "Invalid operation. Must be one of: start, stop, restart, status",
+        variant: "destructive",
+      });
+      return;
+    }
+
     // Reset logs
     setLogs([]);
     systemctlMutation.mutate();
@@ -189,7 +209,7 @@ const SystemctlOperations: React.FC = () => {
       <h2 className="text-2xl font-bold text-[#F79B72] mb-4">Systemd Service Management</h2>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <form onSubmit={handleExecute} className="space-y-4 bg-[#EEEEEE] p-4 rounded-md">
+        <form className="space-y-4 bg-[#EEEEEE] p-4 rounded-md">
           <div>
             <Label htmlFor="service-select" className="text-[#F79B72]">Select Service</Label>
             <Select value={selectedService} onValueChange={setSelectedService}>
@@ -236,7 +256,7 @@ const SystemctlOperations: React.FC = () => {
           </div>
 
           <Button 
-            type="button" // Change to button to prevent form submission
+            type="button"
             onClick={handleExecute}
             className="bg-[#F79B72] text-[#2A4759] hover:bg-[#F79B72]/80"
             disabled={systemctlMutation.isPending}

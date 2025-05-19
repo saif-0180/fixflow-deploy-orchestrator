@@ -11,8 +11,8 @@ import { Loader2 } from 'lucide-react';
 
 interface Deployment {
   id: string;
-  type: 'file' | 'sql' | 'systemd' | 'command' | 'rollback' | string; // Added string as fallback
-  status: 'running' | 'success' | 'failed' | string; // Added string as fallback
+  type: 'file' | 'sql' | 'systemd' | 'command' | 'rollback' | string; 
+  status: 'running' | 'success' | 'failed' | string;
   timestamp: string;
   ft?: string;
   file?: string;
@@ -21,7 +21,7 @@ interface Deployment {
   operation?: string;
   command?: string;
   logs?: string[];
-  original_deployment?: string; // For rollback operations
+  original_deployment?: string;
 }
 
 const DeploymentHistory: React.FC = () => {
@@ -30,11 +30,12 @@ const DeploymentHistory: React.FC = () => {
   const [deploymentLogs, setDeploymentLogs] = useState<string[]>([]);
   const [clearDays, setClearDays] = useState<number>(30);
   
-  // Fetch deployment history
+  // Fetch deployment history with more frequent polling
   const { data: deployments = [], refetch: refetchDeployments, isLoading: isLoadingDeployments } = useQuery({
     queryKey: ['deployment-history'],
     queryFn: async () => {
       try {
+        console.log("Fetching deployment history");
         const response = await fetch('/api/deployments/history');
         if (!response.ok) {
           const errorText = await response.text();
@@ -42,23 +43,27 @@ const DeploymentHistory: React.FC = () => {
           throw new Error('Failed to fetch deployment history');
         }
         const data = await response.json();
+        console.log("Received deployment history data:", data);
         return data as Deployment[];
       } catch (error) {
         console.error(`Error in history fetch: ${error}`);
         throw error;
       }
     },
-    staleTime: 3000, // Consider data fresh for 3 seconds to reduce duplicate requests
+    staleTime: 1000, // Consider data fresh for 1 second to enable more frequent updates
+    refetchInterval: 5000, // Refetch every 5 seconds to keep deployment history current
   });
 
   // Function to fetch logs for a specific deployment
   const fetchDeploymentLogs = async (deploymentId: string) => {
     try {
+      console.log(`Fetching logs for deployment ${deploymentId}`);
       const response = await fetch(`/api/deploy/${deploymentId}/logs`);
       if (!response.ok) {
         throw new Error('Failed to fetch logs');
       }
       const data = await response.json();
+      console.log(`Received logs for ${deploymentId}:`, data);
       
       if (data.logs && data.logs.length > 0) {
         setDeploymentLogs(data.logs);
@@ -86,7 +91,7 @@ const DeploymentHistory: React.FC = () => {
     }
   };
 
-  // Effect to load logs when a deployment is selected
+  // Effect to load logs when a deployment is selected and set up polling if needed
   useEffect(() => {
     if (selectedDeploymentId) {
       fetchDeploymentLogs(selectedDeploymentId);
@@ -96,7 +101,7 @@ const DeploymentHistory: React.FC = () => {
       if (selectedDeployment && selectedDeployment.status === 'running') {
         const interval = setInterval(() => {
           fetchDeploymentLogs(selectedDeploymentId);
-        }, 2000);
+        }, 1000); // Poll every second for active deployments
         
         return () => clearInterval(interval);
       }
@@ -186,12 +191,13 @@ const DeploymentHistory: React.FC = () => {
 
   // Force refresh deployments on initial load and set up periodic refresh
   useEffect(() => {
+    // Initial fetch
     refetchDeployments();
     
-    // Set up periodic refresh every 10 seconds
+    // Set up periodic refresh every 5 seconds
     const intervalId = setInterval(() => {
       refetchDeployments();
-    }, 10000);
+    }, 5000);
     
     return () => clearInterval(intervalId);
   }, [refetchDeployments]);
@@ -255,7 +261,7 @@ const DeploymentHistory: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Deployment List */}
         <div className="space-y-4">
-          <Card className="bg-[#1a2b42]">
+          <Card className="bg-[#EEEEEE]">
             <CardHeader className="pb-2">
               <CardTitle className="text-[#F79B72] text-lg">Recent Deployments</CardTitle>
             </CardHeader>
@@ -268,7 +274,7 @@ const DeploymentHistory: React.FC = () => {
                 ) : (
                   <div className="space-y-2">
                     {deployments.length === 0 ? (
-                      <p className="text-[#EEEEEE] italic">No deployment history found</p>
+                      <p className="text-[#2A4759] italic">No deployment history found</p>
                     ) : (
                       deployments.map((deployment) => (
                         <div 
@@ -285,7 +291,7 @@ const DeploymentHistory: React.FC = () => {
                               {formatDeploymentSummary(deployment)}
                             </div>
                             <div className="text-xs">
-                              {new Date(deployment.timestamp).toLocaleString()}
+                              {new Date(deployment.timestamp * 1000).toLocaleString()}
                             </div>
                           </div>
                         </div>
@@ -302,7 +308,7 @@ const DeploymentHistory: React.FC = () => {
                   type="number" 
                   value={clearDays} 
                   onChange={(e) => setClearDays(parseInt(e.target.value) || 0)}
-                  className="w-20 bg-[#1a2b42] border-[#EEEEEE] text-[#EEEEEE]"
+                  className="w-20 bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]"
                 />
                 <Button 
                   type="submit"

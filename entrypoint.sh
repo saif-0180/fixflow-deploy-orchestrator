@@ -43,7 +43,7 @@ fix_yaml_file() {
   fi
 }
 
-# Set ansible.cfg to use the correct control path
+# Create a fixed version of ansible.cfg
 cat > /etc/ansible/ansible.cfg << EOF
 [defaults]
 host_key_checking = False
@@ -72,15 +72,38 @@ EOF
 
 echo "Ansible configuration created at /etc/ansible/ansible.cfg"
 
+# Fix for systemd templates
+mkdir -p /tmp/templates
+cat > /tmp/templates/systemd_template.yml << EOF
+---
+- name: Manage systemd service on VMs
+  hosts: all
+  gather_facts: no
+  become: {{ sudo }}
+  become_user: {{ user }}
+  tasks:
+    - name: Get service {{ service }} status
+      systemd:
+        name: "{{ service }}"
+        state: "{{ operation if operation != 'status' else omit }}"
+      register: service_status
+      when: operation in ['status', 'start', 'stop', 'restart']
+
+    - name: Display service status
+      debug:
+        var: service_status
+EOF
+
+echo "Systemd template created"
+
 # Hook for patching ansible playbooks before execution
 # Set up a directory watcher to fix YAML issues in ansible playbooks
 while true; do
   for file in /tmp/shell_command_*.yml /tmp/systemd_*.yml; do
-    if [[ -f "$file" && -s "$file" ]]; then
-      if [[ ! -f "${file}.fixed" ]]; then
-        fix_yaml_file "$file"
-        touch "${file}.fixed"
-      fi
+    if [[ -f "$file" && -s "$file" && ! -f "${file}.fixed" ]]; then
+      fix_yaml_file "$file"
+      touch "${file}.fixed"
+      echo "Fixed YAML in $file"
     fi
   done
   sleep 1

@@ -16,6 +16,8 @@ data:
     become_user = infadm
     private_key_file = /root/.ssh/id_rsa
     control_path_dir = /tmp/ansible-ssh
+    forks = 10
+    yaml_valid_extensions = .yaml, .yml, .json
     
     [privilege_escalation]
     become = True
