@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,12 +33,17 @@ const FileOperations: React.FC = () => {
   const [shellSelectedVMs, setShellSelectedVMs] = useState<string[]>([]);
   const [shellSelectedUser, setShellSelectedUser] = useState<string>("infadm");
   const [shellUseSudo, setShellUseSudo] = useState<boolean>(false);
-  const [shellTargetPath, setShellTargetPath] = useState<string>("");
+  const [useUserHomePath, setUseUserHomePath] = useState<boolean>(true);
   const [shellWorkingDir, setShellWorkingDir] = useState<string>("");
   const [shellCommandId, setShellCommandId] = useState<string | null>(null);
   const [shellLogs, setShellLogs] = useState<string[]>([]);
   const [vms, setVms] = useState<string[]>([]);
   const [validateUseSudo, setValidateUseSudo] = useState<boolean>(false);
+  const [userHomes, setUserHomes] = useState<{[key: string]: string}>({
+    'infadm': '/home/infadm',
+    'abpwrk1': '/home/abpwrk1',
+    'root': '/root'
+  });
 
   // Fetch all FTs
   const { data: fts = [] } = useQuery({
@@ -92,12 +98,14 @@ const FileOperations: React.FC = () => {
       setDeploymentId(data.deploymentId);
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast({
         title: "Deployment Started",
         description: "File deployment has been initiated.",
       });
-      // Don't navigate away - let the logs update in place
+      
+      // Start polling for logs
+      startPollingLogs(data.deploymentId, setFileLogs);
     },
     onError: (error) => {
       toast({
@@ -163,6 +171,21 @@ const FileOperations: React.FC = () => {
   // Run shell command mutation
   const shellCommandMutation = useMutation({
     mutationFn: async () => {
+      // Determine the working directory
+      let workingDirectory = shellWorkingDir;
+      
+      if (useUserHomePath && !shellWorkingDir) {
+        workingDirectory = userHomes[shellSelectedUser] || `/home/${shellSelectedUser}`;
+      }
+      
+      console.log("Shell command request:", {
+        command: shellCommand,
+        vms: shellSelectedVMs,
+        sudo: shellUseSudo,
+        user: shellSelectedUser,
+        workingDir: workingDirectory,
+      });
+      
       const response = await fetch('/api/command/shell', {
         method: 'POST',
         headers: {
@@ -173,7 +196,7 @@ const FileOperations: React.FC = () => {
           vms: shellSelectedVMs,
           sudo: shellUseSudo,
           user: shellSelectedUser,
-          workingDir: shellWorkingDir || shellTargetPath,
+          workingDir: workingDirectory,
         }),
       });
       
@@ -182,17 +205,20 @@ const FileOperations: React.FC = () => {
       }
       
       const data = await response.json();
-      setShellCommandId(data.deploymentId || data.commandId); // Store the command ID for live logs
+      setShellCommandId(data.deploymentId || data.commandId);
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast({
         title: "Command Executed",
         description: "Shell command has been initiated.",
       });
-      // The actual results will come through the EventSource
+      
+      // Start polling for logs
+      startPollingLogs(data.deploymentId || data.commandId, setShellLogs);
     },
     onError: (error) => {
+      console.error("Shell command error:", error);
       toast({
         title: "Command Failed",
         description: error instanceof Error ? error.message : "An unknown error occurred",
@@ -208,6 +234,8 @@ const FileOperations: React.FC = () => {
     // Start with a clear log display
     logSetter([]);
     
+    console.log(`Starting to poll logs for deployment ${id}`);
+    
     // Set up polling interval
     const pollInterval = setInterval(async () => {
       try {
@@ -217,12 +245,15 @@ const FileOperations: React.FC = () => {
         }
         
         const data = await response.json();
+        console.log(`Received logs for ${id}:`, data);
+        
         if (data.logs) {
           logSetter(data.logs);
         }
         
         // Stop polling if operation is complete
         if (data.status !== 'running' && data.status !== 'pending') {
+          console.log(`Deployment ${id} is complete with status: ${data.status}`);
           clearInterval(pollInterval);
         }
       } catch (error) {
@@ -231,25 +262,8 @@ const FileOperations: React.FC = () => {
       }
     }, 1000); // Poll every second
     
-    // Clean up on unmount
-    return () => {
-      clearInterval(pollInterval);
-    };
+    return () => clearInterval(pollInterval);
   };
-
-  // Fetch log updates for file deployments
-  useEffect(() => {
-    if (deploymentId) {
-      return startPollingLogs(deploymentId, setFileLogs);
-    }
-  }, [deploymentId]);
-
-  // Fetch log updates for shell commands
-  useEffect(() => {
-    if (shellCommandId) {
-      return startPollingLogs(shellCommandId, setShellLogs);
-    }
-  }, [shellCommandId]);
 
   // Add a useEffect to fetch VMs
   useEffect(() => {
@@ -339,11 +353,6 @@ const FileOperations: React.FC = () => {
     shellCommandMutation.mutate();
   };
 
-  // Calculate the height for file deployment section
-  const fileDeploymentHeight = "345px"; 
-  // Calculate the height for shell command section
-  const shellCommandHeight = "485px";
-
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold text-[#F79B72] mb-4">File Operations</h2>
@@ -351,18 +360,18 @@ const FileOperations: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="space-y-6">
           {/* File Deployment Section */}
-          <div className="space-y-4 bg-[#1a2b42] p-4 rounded-md">
+          <div className="space-y-4 bg-[#EEEEEE] p-4 rounded-md">
             <h3 className="text-lg font-medium text-[#F79B72]">File Deployment</h3>
 
             <div>
               <Label htmlFor="ft-select" className="text-[#F79B72]">Select FT</Label>
               <Select value={selectedFt} onValueChange={setSelectedFt}>
-                <SelectTrigger id="ft-select" className="bg-[#1a2b42] border-[#EEEEEE] text-[#EEEEEE]">
-                  <SelectValue placeholder="Select an FT" className="text-[#EEEEEE]" />
+                <SelectTrigger id="ft-select" className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]">
+                  <SelectValue placeholder="Select an FT" className="text-[#2A4759]" />
                 </SelectTrigger>
-                <SelectContent className="bg-[#2A4759] border-[#EEEEEE] text-[#EEEEEE]">
+                <SelectContent className="bg-[#DDDDDD] border-[#2A4759] text-[#2A4759]">
                   {fts.map((ft: string) => (
-                    <SelectItem key={ft} value={ft} className="text-[#EEEEEE]">{ft}</SelectItem>
+                    <SelectItem key={ft} value={ft} className="text-[#2A4759]">{ft}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -375,12 +384,12 @@ const FileOperations: React.FC = () => {
                 onValueChange={setSelectedFile}
                 disabled={!selectedFt}
               >
-                <SelectTrigger id="file-select" className="bg-[#1a2b42] border-[#EEEEEE] text-[#EEEEEE]">
-                  <SelectValue placeholder="Select a file" className="text-[#EEEEEE]" />
+                <SelectTrigger id="file-select" className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]">
+                  <SelectValue placeholder="Select a file" className="text-[#2A4759]" />
                 </SelectTrigger>
-                <SelectContent className="bg-[#2A4759] border-[#EEEEEE] text-[#EEEEEE]">
+                <SelectContent className="bg-[#DDDDDD] border-[#2A4759] text-[#2A4759]">
                   {files.map((file: string) => (
-                    <SelectItem key={file} value={file} className="text-[#EEEEEE]">{file}</SelectItem>
+                    <SelectItem key={file} value={file} className="text-[#2A4759]">{file}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -389,13 +398,13 @@ const FileOperations: React.FC = () => {
             <div>
               <Label htmlFor="user-select" className="text-[#F79B72]">Select User</Label>
               <Select value={selectedUser} onValueChange={setSelectedUser}>
-                <SelectTrigger id="user-select" className="bg-[#1a2b42] border-[#EEEEEE] text-[#EEEEEE]">
-                  <SelectValue placeholder="Select a user" className="text-[#EEEEEE]" />
+                <SelectTrigger id="user-select" className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]">
+                  <SelectValue placeholder="Select a user" className="text-[#2A4759]" />
                 </SelectTrigger>
-                <SelectContent className="bg-[#2A4759] border-[#EEEEEE] text-[#EEEEEE]">
-                  <SelectItem value="infadm" className="text-[#EEEEEE]">infadm</SelectItem>
-                  <SelectItem value="abpwrk1" className="text-[#EEEEEE]">abpwrk1</SelectItem>
-                  <SelectItem value="root" className="text-[#EEEEEE]">root</SelectItem>
+                <SelectContent className="bg-[#DDDDDD] border-[#2A4759] text-[#2A4759]">
+                  <SelectItem value="infadm" className="text-[#2A4759]">infadm</SelectItem>
+                  <SelectItem value="abpwrk1" className="text-[#2A4759]">abpwrk1</SelectItem>
+                  <SelectItem value="root" className="text-[#2A4759]">root</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -407,7 +416,7 @@ const FileOperations: React.FC = () => {
                 value={targetPath} 
                 onChange={(e) => setTargetPath(e.target.value)}
                 placeholder="/opt/amdocs/abpwrk1/pbin/app" 
-                className="bg-[#1a2b42] border-[#EEEEEE] text-[#EEEEEE]"
+                className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]"
               />
             </div>
 
@@ -415,7 +424,7 @@ const FileOperations: React.FC = () => {
               <Checkbox 
                 id="sudo" 
                 checked={useSudo} 
-                onCheckedChange={(checked) => setUseSudo(checked === true)}
+                onCheckedChange={(checked) => setUseSudo(checked as boolean)}
               />
               <Label htmlFor="sudo" className="text-[#F79B72]">Use sudo</Label>
             </div>
@@ -424,7 +433,7 @@ const FileOperations: React.FC = () => {
               <Checkbox 
                 id="backup" 
                 checked={createBackup} 
-                onCheckedChange={(checked) => setCreateBackup(checked === true)}
+                onCheckedChange={(checked) => setCreateBackup(checked as boolean)}
               />
               <Label htmlFor="backup" className="text-[#F79B72]">Create backup if file exists</Label>
             </div>
@@ -438,7 +447,7 @@ const FileOperations: React.FC = () => {
 
             <div className="flex space-x-2">
               <Button 
-                type="button" // Changed to button type
+                type="button"
                 onClick={handleDeploy} 
                 className="bg-[#F79B72] text-[#2A4759] hover:bg-[#F79B72]/80"
                 disabled={deployMutation.isPending}
@@ -451,7 +460,7 @@ const FileOperations: React.FC = () => {
                   <Checkbox 
                     id="validate-sudo" 
                     checked={validateUseSudo} 
-                    onCheckedChange={(checked) => setValidateUseSudo(checked === true)}
+                    onCheckedChange={(checked) => setValidateUseSudo(checked as boolean)}
                   />
                   <Label htmlFor="validate-sudo" className="text-[#F79B72]">Sudo</Label>
                 </div>
@@ -467,53 +476,68 @@ const FileOperations: React.FC = () => {
           </div>
           
           {/* Shell Command Section */}
-          <div className="space-y-4 bg-[#1a2b42] p-4 rounded-md">
+          <div className="space-y-4 bg-[#EEEEEE] p-4 rounded-md">
             <h3 className="text-lg font-medium text-[#F79B72]">Shell Command</h3>
             
             <div>
               <Label htmlFor="shell-user-select" className="text-[#F79B72]">Select User</Label>
-              <Select value={shellSelectedUser} onValueChange={setShellSelectedUser}>
-                <SelectTrigger id="shell-user-select" className="bg-[#1a2b42] border-[#EEEEEE] text-[#EEEEEE]">
-                  <SelectValue placeholder="Select a user" className="text-[#EEEEEE]" />
+              <Select 
+                value={shellSelectedUser} 
+                onValueChange={(value) => {
+                  setShellSelectedUser(value);
+                  // Reset working directory if user home is checked
+                  if (useUserHomePath) {
+                    setShellWorkingDir('');
+                  }
+                }}
+              >
+                <SelectTrigger id="shell-user-select" className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]">
+                  <SelectValue placeholder="Select a user" className="text-[#2A4759]" />
                 </SelectTrigger>
-                <SelectContent className="bg-[#2A4759] border-[#EEEEEE] text-[#EEEEEE]">
-                  <SelectItem value="infadm" className="text-[#EEEEEE]">infadm</SelectItem>
-                  <SelectItem value="abpwrk1" className="text-[#EEEEEE]">abpwrk1</SelectItem>
-                  <SelectItem value="root" className="text-[#EEEEEE]">root</SelectItem>
+                <SelectContent className="bg-[#DDDDDD] border-[#2A4759] text-[#2A4759]">
+                  <SelectItem value="infadm" className="text-[#2A4759]">infadm</SelectItem>
+                  <SelectItem value="abpwrk1" className="text-[#2A4759]">abpwrk1</SelectItem>
+                  <SelectItem value="root" className="text-[#2A4759]">root</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             
-            <div>
-              <Label htmlFor="shell-target-path" className="text-[#F79B72]">Default User Home Path</Label>
-              <Input 
-                id="shell-target-path" 
-                value={shellTargetPath} 
-                onChange={(e) => setShellTargetPath(e.target.value)}
-                placeholder="/home/infadm" 
-                className="bg-[#1a2b42] border-[#EEEEEE] text-[#EEEEEE]"
+            <div className="flex items-center space-x-2">
+              <Checkbox 
+                id="use-home-path" 
+                checked={useUserHomePath} 
+                onCheckedChange={(checked) => {
+                  setUseUserHomePath(checked as boolean);
+                  if (checked) {
+                    setShellWorkingDir('');
+                  }
+                }}
               />
+              <Label htmlFor="use-home-path" className="text-[#F79B72]">
+                Use user's home directory ({userHomes[shellSelectedUser] || `/home/${shellSelectedUser}`})
+              </Label>
             </div>
             
             <div>
-              <Label htmlFor="shell-working-dir" className="text-[#F79B72]">Command Working Directory</Label>
+              <Label htmlFor="shell-working-dir" className="text-[#F79B72]">Custom Working Directory</Label>
               <Input 
                 id="shell-working-dir" 
                 value={shellWorkingDir} 
                 onChange={(e) => setShellWorkingDir(e.target.value)}
                 placeholder="/opt/amdocs/scripts" 
-                className="bg-[#1a2b42] border-[#EEEEEE] text-[#EEEEEE]"
+                className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]"
+                disabled={useUserHomePath}
               />
             </div>
             
             <div>
-              <Label htmlFor="shell-command" className="text-[#F79B72]">Command (chmod, chown, etc.)</Label>
+              <Label htmlFor="shell-command" className="text-[#F79B72]">Command</Label>
               <Input 
                 id="shell-command" 
                 value={shellCommand} 
                 onChange={(e) => setShellCommand(e.target.value)}
-                placeholder="chmod 755 /path/to/file" 
-                className="bg-[#1a2b42] border-[#EEEEEE] text-[#EEEEEE]"
+                placeholder="touch config.sh" 
+                className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]"
               />
             </div>
             
@@ -521,7 +545,7 @@ const FileOperations: React.FC = () => {
               <Checkbox 
                 id="shell-sudo" 
                 checked={shellUseSudo} 
-                onCheckedChange={(checked) => setShellUseSudo(checked === true)}
+                onCheckedChange={(checked) => setShellUseSudo(checked as boolean)}
               />
               <Label htmlFor="shell-sudo" className="text-[#F79B72]">Use sudo</Label>
             </div>
@@ -534,7 +558,7 @@ const FileOperations: React.FC = () => {
             />
 
             <Button 
-              type="button" // Changed to button type
+              type="button"
               onClick={handleRunShellCommand} 
               className="bg-[#F79B72] text-[#2A4759] hover:bg-[#F79B72]/80"
               disabled={shellCommandMutation.isPending}
@@ -550,7 +574,7 @@ const FileOperations: React.FC = () => {
           <div>
             <LogDisplay 
               logs={fileLogs} 
-              height={fileDeploymentHeight} 
+              height="345px"
               fixedHeight={true}
               title="File Deployment Logs" 
             />
@@ -560,7 +584,7 @@ const FileOperations: React.FC = () => {
           <div>
             <LogDisplay 
               logs={shellLogs} 
-              height={shellCommandHeight} 
+              height="485px"
               fixedHeight={true}
               title="Shell Command Logs" 
             />
