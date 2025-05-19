@@ -23,6 +23,7 @@ const FileOperations: React.FC = () => {
   const [targetPath, setTargetPath] = useState<string>("");
   const [selectedVMs, setSelectedVMs] = useState<string[]>([]);
   const [useSudo, setUseSudo] = useState<boolean>(false);
+  const [createBackup, setCreateBackup] = useState<boolean>(true);
   const [fileLogs, setFileLogs] = useState<string[]>([]);
   const [deploymentId, setDeploymentId] = useState<string | null>(null);
   const [shellCommand, setShellCommand] = useState<string>("");
@@ -36,6 +37,7 @@ const FileOperations: React.FC = () => {
   const [shellCommandId, setShellCommandId] = useState<string | null>(null);
   const [shellLogs, setShellLogs] = useState<string[]>([]);
   const [vms, setVms] = useState<string[]>([]);
+  const [validateUseSudo, setValidateUseSudo] = useState<boolean>(false);
 
   // Fetch all FTs
   const { data: fts = [] } = useQuery({
@@ -78,6 +80,7 @@ const FileOperations: React.FC = () => {
           targetPath,
           vms: selectedVMs,
           sudo: useSudo,
+          createBackup: createBackup,
         }),
       });
       
@@ -98,7 +101,7 @@ const FileOperations: React.FC = () => {
     onError: (error) => {
       toast({
         title: "Deployment Failed",
-        description: error.message,
+        description: error instanceof Error ? error.message : "An unknown error occurred",
         variant: "destructive",
       });
     },
@@ -113,6 +116,12 @@ const FileOperations: React.FC = () => {
       
       const response = await fetch(`/api/deploy/${deploymentId}/validate`, {
         method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          sudo: validateUseSudo
+        })
       });
       
       if (!response.ok) {
@@ -129,14 +138,22 @@ const FileOperations: React.FC = () => {
       // Add validation results to logs
       if (data.results) {
         data.results.forEach((result: any) => {
-          setFileLogs(prev => [...prev, `Validation on ${result.vm}: ${result.status}`]);
+          const checksum = result.cksum ? `Checksum: ${result.cksum}` : 'No checksum available';
+          const permissions = result.permissions ? `Permissions: ${result.permissions}` : '';
+          
+          setFileLogs(prev => [
+            ...prev, 
+            `Validation on ${result.vm}: ${result.status}`, 
+            checksum, 
+            permissions
+          ]);
         });
       }
     },
     onError: (error) => {
       toast({
         title: "Validation Failed",
-        description: error.message,
+        description: error instanceof Error ? error.message : "An unknown error occurred",
         variant: "destructive",
       });
     },
@@ -155,7 +172,7 @@ const FileOperations: React.FC = () => {
           vms: shellSelectedVMs,
           sudo: shellUseSudo,
           user: shellSelectedUser,
-          path: shellWorkingDir || shellTargetPath,
+          workingDir: shellWorkingDir || shellTargetPath,
         }),
       });
       
@@ -164,7 +181,7 @@ const FileOperations: React.FC = () => {
       }
       
       const data = await response.json();
-      setShellCommandId(data.commandId); // Store the command ID for live logs
+      setShellCommandId(data.deploymentId || data.commandId); // Store the command ID for live logs
       return data;
     },
     onSuccess: () => {
@@ -177,7 +194,7 @@ const FileOperations: React.FC = () => {
     onError: (error) => {
       toast({
         title: "Command Failed",
-        description: error.message,
+        description: error instanceof Error ? error.message : "An unknown error occurred",
         variant: "destructive",
       });
     },
@@ -334,18 +351,18 @@ const FileOperations: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="space-y-6">
           {/* File Deployment Section */}
-          <div className="space-y-4 bg-[#EEEEEE] p-4 rounded-md">
+          <div className="space-y-4 bg-[#1a2b42] p-4 rounded-md">
             <h3 className="text-lg font-medium text-[#F79B72]">File Deployment</h3>
 
             <div>
               <Label htmlFor="ft-select" className="text-[#F79B72]">Select FT</Label>
               <Select value={selectedFt} onValueChange={setSelectedFt}>
-                <SelectTrigger id="ft-select" className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]">
-                  <SelectValue placeholder="Select an FT" className="text-[#2A4759]" />
+                <SelectTrigger id="ft-select" className="bg-[#1a2b42] border-[#EEEEEE] text-[#EEEEEE]">
+                  <SelectValue placeholder="Select an FT" className="text-[#EEEEEE]" />
                 </SelectTrigger>
-                <SelectContent className="bg-[#DDDDDD] border-[#2A4759] text-[#2A4759]">
+                <SelectContent className="bg-[#2A4759] border-[#EEEEEE] text-[#EEEEEE]">
                   {fts.map((ft: string) => (
-                    <SelectItem key={ft} value={ft} className="text-[#2A4759]">{ft}</SelectItem>
+                    <SelectItem key={ft} value={ft} className="text-[#EEEEEE]">{ft}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -358,12 +375,12 @@ const FileOperations: React.FC = () => {
                 onValueChange={setSelectedFile}
                 disabled={!selectedFt}
               >
-                <SelectTrigger id="file-select" className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]">
-                  <SelectValue placeholder="Select a file" className="text-[#2A4759]" />
+                <SelectTrigger id="file-select" className="bg-[#1a2b42] border-[#EEEEEE] text-[#EEEEEE]">
+                  <SelectValue placeholder="Select a file" className="text-[#EEEEEE]" />
                 </SelectTrigger>
-                <SelectContent className="bg-[#DDDDDD] border-[#2A4759] text-[#2A4759]">
+                <SelectContent className="bg-[#2A4759] border-[#EEEEEE] text-[#EEEEEE]">
                   {files.map((file: string) => (
-                    <SelectItem key={file} value={file} className="text-[#2A4759]">{file}</SelectItem>
+                    <SelectItem key={file} value={file} className="text-[#EEEEEE]">{file}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -372,12 +389,13 @@ const FileOperations: React.FC = () => {
             <div>
               <Label htmlFor="user-select" className="text-[#F79B72]">Select User</Label>
               <Select value={selectedUser} onValueChange={setSelectedUser}>
-                <SelectTrigger id="user-select" className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]">
-                  <SelectValue placeholder="Select a user" className="text-[#2A4759]" />
+                <SelectTrigger id="user-select" className="bg-[#1a2b42] border-[#EEEEEE] text-[#EEEEEE]">
+                  <SelectValue placeholder="Select a user" className="text-[#EEEEEE]" />
                 </SelectTrigger>
-                <SelectContent className="bg-[#DDDDDD] border-[#2A4759] text-[#2A4759]">
-                  <SelectItem value="infadm" className="text-[#2A4759]">infadm</SelectItem>
-                  <SelectItem value="abpwrk1" className="text-[#2A4759]">abpwrk1</SelectItem>
+                <SelectContent className="bg-[#2A4759] border-[#EEEEEE] text-[#EEEEEE]">
+                  <SelectItem value="infadm" className="text-[#EEEEEE]">infadm</SelectItem>
+                  <SelectItem value="abpwrk1" className="text-[#EEEEEE]">abpwrk1</SelectItem>
+                  <SelectItem value="root" className="text-[#EEEEEE]">root</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -389,7 +407,7 @@ const FileOperations: React.FC = () => {
                 value={targetPath} 
                 onChange={(e) => setTargetPath(e.target.value)}
                 placeholder="/opt/amdocs/abpwrk1/pbin/app" 
-                className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]"
+                className="bg-[#1a2b42] border-[#EEEEEE] text-[#EEEEEE]"
               />
             </div>
 
@@ -400,6 +418,15 @@ const FileOperations: React.FC = () => {
                 onCheckedChange={(checked) => setUseSudo(checked === true)}
               />
               <Label htmlFor="sudo" className="text-[#F79B72]">Use sudo</Label>
+            </div>
+            
+            <div className="flex items-center space-x-2">
+              <Checkbox 
+                id="backup" 
+                checked={createBackup} 
+                onCheckedChange={(checked) => setCreateBackup(checked === true)}
+              />
+              <Label htmlFor="backup" className="text-[#F79B72]">Create backup if file exists</Label>
             </div>
 
             <VMSelector 
@@ -418,29 +445,40 @@ const FileOperations: React.FC = () => {
                 {deployMutation.isPending ? "Deploying..." : "Deploy"}
               </Button>
               
-              <Button 
-                onClick={() => validateMutation.mutate()}
-                className="bg-[#2A4759] hover:bg-[#2A4759]/80 text-white"
-                disabled={!deploymentId || validateMutation.isPending}
-              >
-                Validate
-              </Button>
+              <div className="flex space-x-2 ml-2">
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="validate-sudo" 
+                    checked={validateUseSudo} 
+                    onCheckedChange={(checked) => setValidateUseSudo(checked === true)}
+                  />
+                  <Label htmlFor="validate-sudo" className="text-[#F79B72]">Sudo</Label>
+                </div>
+                <Button 
+                  onClick={() => validateMutation.mutate()}
+                  className="bg-[#2A4759] hover:bg-[#2A4759]/80 text-white"
+                  disabled={!deploymentId || validateMutation.isPending}
+                >
+                  Validate
+                </Button>
+              </div>
             </div>
           </div>
           
           {/* Shell Command Section */}
-          <div className="space-y-4 bg-[#EEEEEE] p-4 rounded-md">
+          <div className="space-y-4 bg-[#1a2b42] p-4 rounded-md">
             <h3 className="text-lg font-medium text-[#F79B72]">Shell Command</h3>
             
             <div>
               <Label htmlFor="shell-user-select" className="text-[#F79B72]">Select User</Label>
               <Select value={shellSelectedUser} onValueChange={setShellSelectedUser}>
-                <SelectTrigger id="shell-user-select" className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]">
-                  <SelectValue placeholder="Select a user" className="text-[#2A4759]" />
+                <SelectTrigger id="shell-user-select" className="bg-[#1a2b42] border-[#EEEEEE] text-[#EEEEEE]">
+                  <SelectValue placeholder="Select a user" className="text-[#EEEEEE]" />
                 </SelectTrigger>
-                <SelectContent className="bg-[#DDDDDD] border-[#2A4759] text-[#2A4759]">
-                  <SelectItem value="infadm" className="text-[#2A4759]">infadm</SelectItem>
-                  <SelectItem value="abpwrk1" className="text-[#2A4759]">abpwrk1</SelectItem>
+                <SelectContent className="bg-[#2A4759] border-[#EEEEEE] text-[#EEEEEE]">
+                  <SelectItem value="infadm" className="text-[#EEEEEE]">infadm</SelectItem>
+                  <SelectItem value="abpwrk1" className="text-[#EEEEEE]">abpwrk1</SelectItem>
+                  <SelectItem value="root" className="text-[#EEEEEE]">root</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -452,7 +490,7 @@ const FileOperations: React.FC = () => {
                 value={shellTargetPath} 
                 onChange={(e) => setShellTargetPath(e.target.value)}
                 placeholder="/home/infadm" 
-                className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]"
+                className="bg-[#1a2b42] border-[#EEEEEE] text-[#EEEEEE]"
               />
             </div>
             
@@ -463,7 +501,7 @@ const FileOperations: React.FC = () => {
                 value={shellWorkingDir} 
                 onChange={(e) => setShellWorkingDir(e.target.value)}
                 placeholder="/opt/amdocs/scripts" 
-                className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]"
+                className="bg-[#1a2b42] border-[#EEEEEE] text-[#EEEEEE]"
               />
             </div>
             
@@ -474,7 +512,7 @@ const FileOperations: React.FC = () => {
                 value={shellCommand} 
                 onChange={(e) => setShellCommand(e.target.value)}
                 placeholder="chmod 755 /path/to/file" 
-                className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]"
+                className="bg-[#1a2b42] border-[#EEEEEE] text-[#EEEEEE]"
               />
             </div>
             

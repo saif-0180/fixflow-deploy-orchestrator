@@ -15,10 +15,11 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import LogDisplay from '@/components/LogDisplay';
 import logger from '@/utils/logger';
+import { Loader2 } from 'lucide-react';
 
 interface Deployment {
   id: string;
-  type: 'file' | 'sql' | 'systemd' | 'command';
+  type: 'file' | 'sql' | 'systemd' | 'command' | 'rollback';
   status: 'running' | 'success' | 'failed';
   timestamp: string;
   ft?: string;
@@ -28,6 +29,7 @@ interface Deployment {
   operation?: string;
   command?: string;
   logs?: string[];
+  original_deployment?: string; // For rollback operations
 }
 
 const DeploymentHistory: React.FC = () => {
@@ -35,15 +37,13 @@ const DeploymentHistory: React.FC = () => {
   const [selectedDeploymentId, setSelectedDeploymentId] = useState<string | null>(null);
   const [deploymentLogs, setDeploymentLogs] = useState<string[]>([]);
   const [clearDays, setClearDays] = useState<number>(30);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-
+  
   // Fetch deployment history
-  const { data: deployments = [], refetch: refetchDeployments } = useQuery({
+  const { data: deployments = [], refetch: refetchDeployments, isLoading: isLoadingDeployments } = useQuery({
     queryKey: ['deployment-history'],
     queryFn: async () => {
       logger.info('Fetching deployment history');
       try {
-        setIsLoading(true);
         const response = await fetch('/api/deployments/history');
         if (!response.ok) {
           const errorText = await response.text();
@@ -55,9 +55,53 @@ const DeploymentHistory: React.FC = () => {
       } catch (error) {
         logger.error(`Error in history fetch: ${error}`);
         throw error;
-      } finally {
-        setIsLoading(false);
       }
+    }
+  });
+
+  // Fetch logs for selected deployment
+  const { isLoading: isLoadingLogs, refetch: refetchLogs } = useQuery({
+    queryKey: ['deployment-logs', selectedDeploymentId],
+    queryFn: async () => {
+      if (!selectedDeploymentId) {
+        return { logs: [] };
+      }
+      
+      logger.info(`Fetching logs for deployment: ${selectedDeploymentId}`);
+      try {
+        const response = await fetch(`/api/deploy/${selectedDeploymentId}/logs`);
+        if (!response.ok) {
+          const errorText = await response.text();
+          logger.error(`Failed to fetch logs: ${errorText}`);
+          throw new Error('Failed to fetch logs');
+        }
+        return await response.json();
+      } catch (error) {
+        logger.error(`Error fetching logs: ${error}`);
+        throw error;
+      }
+    },
+    enabled: !!selectedDeploymentId,
+    onSuccess: (data) => {
+      if (data.logs && data.logs.length > 0) {
+        setDeploymentLogs(data.logs);
+      } else {
+        // If no logs in response, check if the selected deployment has logs
+        const selectedDeployment = deployments.find(d => d.id === selectedDeploymentId);
+        if (selectedDeployment?.logs && selectedDeployment.logs.length > 0) {
+          setDeploymentLogs(selectedDeployment.logs);
+        } else {
+          setDeploymentLogs(["No logs available for this deployment"]);
+        }
+      }
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to fetch logs for this deployment",
+        variant: "destructive",
+      });
+      setDeploymentLogs(["Error loading logs. Please try again."]);
     }
   });
 
@@ -87,64 +131,55 @@ const DeploymentHistory: React.FC = () => {
         description: data.message,
       });
       refetchDeployments();
+      setSelectedDeploymentId(null); // Clear selection since it might be deleted
+      setDeploymentLogs([]);
     },
     onError: (error) => {
       toast({
         title: "Error",
-        description: error.message,
+        description: error instanceof Error ? error.message : "Failed to clear logs",
         variant: "destructive",
       });
     },
   });
 
-  // Fetch logs for selected deployment
-  useEffect(() => {
-    if (!selectedDeploymentId) {
-      setDeploymentLogs([]);
-      return;
-    }
-    
-    const fetchLogs = async () => {
-      logger.info(`Fetching logs for deployment: ${selectedDeploymentId}`);
-      try {
-        setIsLoading(true);
-        const response = await fetch(`/api/deploy/${selectedDeploymentId}/logs`);
-        if (!response.ok) {
-          toast({
-            title: "Error",
-            description: "Failed to fetch logs for this deployment",
-            variant: "destructive",
-          });
-          return;
+  // Rollback mutation
+  const rollbackMutation = useMutation({
+    mutationFn: async (deploymentId: string) => {
+      logger.info(`Rolling back deployment: ${deploymentId}`);
+      const response = await fetch(`/api/deploy/${deploymentId}/rollback`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
         }
-        
-        const data = await response.json();
-        // If the deployment has logs in the history, use those
-        if (data.logs && data.logs.length > 0) {
-          setDeploymentLogs(data.logs);
-        } else {
-          // If no logs in response, check if the selected deployment has logs
-          const selectedDeployment = deployments.find(d => d.id === selectedDeploymentId);
-          if (selectedDeployment?.logs && selectedDeployment.logs.length > 0) {
-            setDeploymentLogs(selectedDeployment.logs);
-          } else {
-            setDeploymentLogs(["No logs available for this deployment"]);
-          }
-        }
-      } catch (error) {
-        logger.error(`Error fetching logs: ${error}`);
-        toast({
-          title: "Error",
-          description: "Failed to fetch logs",
-          variant: "destructive",
-        });
-      } finally {
-        setIsLoading(false);
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        logger.error(`Failed to rollback: ${errorText}`);
+        throw new Error('Failed to rollback deployment');
       }
-    };
-    
-    fetchLogs();
-  }, [selectedDeploymentId, toast, deployments]);
+      
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Rollback Initiated",
+        description: `Rollback has been started with ID: ${data.deploymentId}`,
+      });
+      // Wait a moment then refresh the list
+      setTimeout(() => {
+        refetchDeployments();
+      }, 1000);
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to rollback deployment",
+        variant: "destructive",
+      });
+    }
+  });
 
   // Auto-select the first deployment when list loads and none is selected
   useEffect(() => {
@@ -168,6 +203,8 @@ const DeploymentHistory: React.FC = () => {
         return `Systemd: ${deployment.operation || 'N/A'} ${deployment.service || 'N/A'} (${deployment.status})`;
       case 'command':
         return `Command: ${deployment.command ? `${deployment.command.substring(0, 30)}${deployment.command.length > 30 ? '...' : ''}` : 'N/A'} (${deployment.status})`;
+      case 'rollback':
+        return `Rollback: ${deployment.ft || 'N/A'}/${deployment.file || 'N/A'} (${deployment.status})`;
       default:
         return `${deployment.type} (${deployment.status})`;
     }
@@ -186,6 +223,12 @@ const DeploymentHistory: React.FC = () => {
     clearLogsMutation.mutate(clearDays);
   };
 
+  const handleRollback = (deploymentId: string) => {
+    if (window.confirm("Are you sure you want to rollback this deployment? This will restore the previous version of the file.")) {
+      rollbackMutation.mutate(deploymentId);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold text-[#F79B72] mb-4">Deployment History</h2>
@@ -193,20 +236,20 @@ const DeploymentHistory: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Deployment List */}
         <div className="space-y-4">
-          <Card className="bg-[#EEEEEE]">
+          <Card className="bg-[#1a2b42]">
             <CardHeader className="pb-2">
-              <CardTitle className="text-[#2A4759] text-lg">Recent Deployments</CardTitle>
+              <CardTitle className="text-[#F79B72] text-lg">Recent Deployments</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="h-[400px] overflow-y-auto">
-                {isLoading ? (
+                {isLoadingDeployments ? (
                   <div className="flex items-center justify-center h-full">
-                    <p className="text-[#2A4759] italic">Loading deployments...</p>
+                    <Loader2 className="h-8 w-8 animate-spin text-[#F79B72]" />
                   </div>
                 ) : (
                   <div className="space-y-2">
                     {deployments.length === 0 ? (
-                      <p className="text-[#2A4759] italic">No deployment history found</p>
+                      <p className="text-[#EEEEEE] italic">No deployment history found</p>
                     ) : (
                       deployments.map((deployment) => (
                         <div 
@@ -240,7 +283,7 @@ const DeploymentHistory: React.FC = () => {
                   type="number" 
                   value={clearDays} 
                   onChange={(e) => setClearDays(parseInt(e.target.value) || 0)}
-                  className="w-20 bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]"
+                  className="w-20 bg-[#1a2b42] border-[#EEEEEE] text-[#EEEEEE]"
                 />
                 <Button 
                   onClick={handleClearLogs} 
@@ -261,15 +304,27 @@ const DeploymentHistory: React.FC = () => {
         </div>
         
         {/* Deployment Details */}
-        <div>
+        <div className="space-y-4">
           <LogDisplay 
             logs={selectedDeployment?.logs || deploymentLogs} 
-            height="480px" 
+            height="400px" 
             title={selectedDeployment 
               ? `Deployment Details - ${formatDeploymentSummary(selectedDeployment)}` 
               : "Select a deployment to view details"
             } 
           />
+          
+          {selectedDeployment && selectedDeployment.type === 'file' && selectedDeployment.status === 'success' && (
+            <div className="flex justify-end">
+              <Button 
+                onClick={() => handleRollback(selectedDeployment.id)}
+                disabled={rollbackMutation.isPending}
+                className="bg-[#2A4759] text-white hover:bg-[#2A4759]/80"
+              >
+                {rollbackMutation.isPending ? "Rolling Back..." : "Rollback Deployment"}
+              </Button>
+            </div>
+          )}
         </div>
       </div>
     </div>

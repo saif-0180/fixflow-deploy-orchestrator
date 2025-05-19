@@ -58,16 +58,30 @@ deployments = {}
 try:
     if os.path.exists(DEPLOYMENT_HISTORY_FILE):
         with open(DEPLOYMENT_HISTORY_FILE, 'r') as f:
-            deployments = json.load(f)
-        logger.info(f"Loaded {len(deployments)} previous deployments from history file")
+            try:
+                deployments = json.load(f)
+                logger.info(f"Loaded {len(deployments)} previous deployments from history file")
+            except json.JSONDecodeError as e:
+                logger.error(f"Error parsing deployment history file: {str(e)}")
+                # Create a backup of the corrupted file
+                backup_file = os.path.join(DEPLOYMENT_LOGS_DIR, f'deployment_history_corrupt_{int(time.time())}.json')
+                os.rename(DEPLOYMENT_HISTORY_FILE, backup_file)
+                logger.info(f"Renamed corrupted history file to {backup_file}")
+                deployments = {}
     else:
         # Look for backup history files in the logs directory
         backup_files = sorted(glob.glob(os.path.join(DEPLOYMENT_LOGS_DIR, 'deployment_history_*.json')), reverse=True)
         if backup_files:
             logger.info(f"Found {len(backup_files)} backup deployment history files, loading most recent")
-            with open(backup_files[0], 'r') as f:
-                deployments = json.load(f)
-            logger.info(f"Loaded {len(deployments)} previous deployments from backup file {backup_files[0]}")
+            for backup_file in backup_files:
+                try:
+                    with open(backup_file, 'r') as f:
+                        deployments = json.load(f)
+                    logger.info(f"Loaded {len(deployments)} previous deployments from backup file {backup_file}")
+                    break
+                except (json.JSONDecodeError, Exception) as e:
+                    logger.error(f"Error loading from backup file {backup_file}: {str(e)}")
+                    continue
         else:
             logger.info("No deployment history file found, creating new one")
             # Create an empty history file
@@ -93,9 +107,9 @@ except (FileNotFoundError, json.JSONDecodeError) as e:
             {"name": "batch2", "type": "batch", "ip": "192.168.1.11"},
             {"name": "imdg1", "type": "imdg", "ip": "192.168.1.20"},
             {"name": "imdg2", "type": "imdg", "ip": "192.168.1.21"},
-            # More VMs...
+            {"name": "airflow", "type": "airflow", "ip": "192.168.1.30"}
         ],
-        "users": ["infadm", "abpwrk1"],
+        "users": ["infadm", "abpwrk1", "root"],
         "db_users": ["postgres", "dbadmin"],
         "systemd_services": ["hazelcast", "kafka", "zookeeper", "airflow-scheduler"]
     }
@@ -119,22 +133,28 @@ def save_deployment_history():
         if os.path.exists(DEPLOYMENT_HISTORY_FILE):
             timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
             backup_file = os.path.join(DEPLOYMENT_LOGS_DIR, f'deployment_history_{timestamp}.json')
-            with open(DEPLOYMENT_HISTORY_FILE, 'r') as src:
-                with open(backup_file, 'w') as dst:
-                    dst.write(src.read())
-            logger.debug(f"Created backup of deployment history: {backup_file}")
+            try:
+                with open(DEPLOYMENT_HISTORY_FILE, 'r') as src:
+                    with open(backup_file, 'w') as dst:
+                        dst.write(src.read())
+                logger.debug(f"Created backup of deployment history: {backup_file}")
+            except Exception as e:
+                logger.error(f"Error creating backup of history file: {str(e)}")
         
         # Save the current deployment history
         with open(DEPLOYMENT_HISTORY_FILE, 'w') as f:
             json.dump(deployments, f)
         logger.info(f"Saved {len(deployments)} deployments to history file")
         
-        # Clean up old backup files (keep only last 5)
+        # Clean up old backup files (keep only last 10)
         backup_files = sorted(glob.glob(os.path.join(DEPLOYMENT_LOGS_DIR, 'deployment_history_*.json')))
-        if len(backup_files) > 5:
-            for old_file in backup_files[:-5]:
-                os.remove(old_file)
-                logger.debug(f"Removed old backup file: {old_file}")
+        if len(backup_files) > 10:
+            for old_file in backup_files[:-10]:
+                try:
+                    os.remove(old_file)
+                    logger.debug(f"Removed old backup file: {old_file}")
+                except Exception as e:
+                    logger.error(f"Error removing old backup file {old_file}: {str(e)}")
     except Exception as e:
         logger.error(f"Failed to save deployment history: {str(e)}")
 
@@ -290,6 +310,7 @@ def deploy_file():
     target_path = data.get('targetPath')
     vms = data.get('vms')
     sudo = data.get('sudo', False)
+    create_backup = data.get('createBackup', True)  # Default to true for safety
     
     logger.info(f"File deployment request received: {file_name} from FT {ft} to {len(vms)} VMs")
     
@@ -310,6 +331,7 @@ def deploy_file():
         "target_path": target_path,
         "vms": vms,
         "sudo": sudo,
+        "create_backup": create_backup,
         "status": "running",
         "timestamp": time.time(),
         "logs": []
@@ -334,6 +356,7 @@ def process_file_deployment(deployment_id):
         target_path = deployment["target_path"]
         vms = deployment["vms"]
         sudo = deployment["sudo"]
+        create_backup = deployment.get("create_backup", True)
         
         source_file = os.path.join(FIX_FILES_DIR, 'AllFts', ft, file_name)
         logger.info(f"Processing file deployment from {source_file}")
@@ -351,6 +374,7 @@ def process_file_deployment(deployment_id):
         # Generate an ansible playbook for file deployment
         playbook_file = f"/tmp/file_deploy_{deployment_id}.yml"
         
+        # Create a more robust playbook that creates target directory if needed
         with open(playbook_file, 'w') as f:
             f.write(f"""---
 - name: Deploy file to VMs
@@ -360,12 +384,30 @@ def process_file_deployment(deployment_id):
   become_method: sudo
   become_user: {user}
   tasks:
-    - name: Create target directory if it does not exist
+    - name: Create target directory structure if it does not exist
       ansible.builtin.file:
-        path: "{os.path.dirname(target_path)}"
+        path: "{os.path.dirname(os.path.join(target_path, file_name))}"
         state: directory
         mode: '0755'
+        recurse: yes
+      become: {"true" if sudo else "false"}
+      become_user: {user}
       
+    # Check if file exists first to support backup
+    - name: Check if file already exists
+      ansible.builtin.stat:
+        path: "{os.path.join(target_path, file_name)}"
+      register: file_stat
+      
+    # Create backup of existing file if requested
+    - name: Create backup of existing file if it exists
+      ansible.builtin.copy:
+        src: "{os.path.join(target_path, file_name)}"
+        dest: "{os.path.join(target_path, file_name)}.bak.{{ ansible_date_time.epoch }}"
+        remote_src: yes
+      when: file_stat.stat.exists and {str(create_backup).lower()}
+      
+    # Copy the file to the target location
     - name: Copy file to target VMs
       ansible.builtin.copy:
         src: "{source_file}"
@@ -395,29 +437,6 @@ def process_file_deployment(deployment_id):
         
         logger.debug(f"Created Ansible inventory: {inventory_file}")
         log_message(deployment_id, f"Created inventory file with targets: {', '.join(vms)}")
-        
-        # Check SSH connection before running playbook
-        for vm_name in vms:
-            vm = next((v for v in inventory["vms"] if v["name"] == vm_name), None)
-            if vm:
-                ssh_check_cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-i", "/root/.ssh/id_rsa", f"infadm@{vm['ip']}", "echo 'SSH Connection Test'"]
-                log_message(deployment_id, f"Testing SSH connection to {vm_name} ({vm['ip']})")
-                
-                try:
-                    ssh_check_result = subprocess.run(
-                        ssh_check_cmd, 
-                        stdout=subprocess.PIPE, 
-                        stderr=subprocess.PIPE,
-                        timeout=5,
-                        text=True
-                    )
-                    
-                    if ssh_check_result.returncode == 0:
-                        log_message(deployment_id, f"SSH connection to {vm_name} successful")
-                    else:
-                        log_message(deployment_id, f"SSH connection to {vm_name} failed: {ssh_check_result.stderr.strip()}")
-                except Exception as ssh_err:
-                    log_message(deployment_id, f"SSH connection test error for {vm_name}: {str(ssh_err)}")
         
         # Create ssh control directory to avoid "cannot bind to path" errors
         os.makedirs('/tmp/ansible-ssh', exist_ok=True)
@@ -474,6 +493,9 @@ def process_file_deployment(deployment_id):
 def validate_deployment(deployment_id):
     logger.info(f"Validating deployment with ID: {deployment_id}")
     
+    data = request.json or {}
+    use_sudo = data.get('sudo', False)
+    
     if deployment_id not in deployments:
         logger.error(f"Deployment not found with ID: {deployment_id}")
         return jsonify({"error": "Deployment not found"}), 404
@@ -502,19 +524,73 @@ def validate_deployment(deployment_id):
             })
             continue
         
-        # Run checksum command on remote VM
-        cmd = ["ssh", f"infadm@{vm['ip']}", f"cksum {target_path}"]
+        # Generate a playbook to run cksum command
+        validate_playbook = f"/tmp/validate_{deployment_id}_{vm_name}.yml"
+        with open(validate_playbook, 'w') as f:
+            f.write(f"""---
+- name: Validate file
+  hosts: {vm_name}
+  gather_facts: false
+  become: {"true" if use_sudo else "false"}
+  tasks:
+    - name: Check if file exists
+      stat:
+        path: "{target_path}"
+      register: file_check
+
+    - name: Run cksum command
+      shell: cksum "{target_path}" | awk '{{print $1, $2}}'
+      register: cksum_result
+      when: file_check.stat.exists
+      
+    - name: Get file permissions
+      shell: ls -la "{target_path}" | awk '{{print $1, $3, $4}}'
+      register: perm_result
+      when: file_check.stat.exists
+""")
+        
+        # Generate inventory file
+        validate_inventory = f"/tmp/validate_inventory_{deployment_id}_{vm_name}"
+        with open(validate_inventory, 'w') as f:
+            f.write(f"{vm_name} ansible_host={vm['ip']} ansible_user=infadm ansible_ssh_private_key_file=/root/.ssh/id_rsa")
+        
+        log_message(deployment_id, f"Running validation on {vm_name}")
+        cmd = ["ansible-playbook", "-i", validate_inventory, validate_playbook, "--limit", vm_name, "-v"]
         
         try:
-            log_message(deployment_id, f"Running cksum on {vm_name}")
             output = subprocess.check_output(cmd, stderr=subprocess.STDOUT).decode().strip()
             
-            log_message(deployment_id, f"Validation on {vm_name}: {output}")
+            log_message(deployment_id, f"Raw validation output on {vm_name}: {output}")
+            
+            # Check if cksum information is in output
+            cksum_info = "File not found"
+            perm_info = "N/A"
+            
+            cksum_match = re.search(r'cksum_result.*?stdout.*?"(.*?)"', output, re.DOTALL)
+            if cksum_match:
+                cksum_info = cksum_match.group(1)
+                
+            perm_match = re.search(r'perm_result.*?stdout.*?"(.*?)"', output, re.DOTALL)
+            if perm_match:
+                perm_info = perm_match.group(1)
+            
+            result_message = f"Validation on {vm_name}: Checksum={cksum_info}, Permissions={perm_info}"
+            log_message(deployment_id, result_message)
+            
             results.append({
                 "vm": vm_name,
                 "status": "SUCCESS",
-                "output": output
+                "cksum": cksum_info,
+                "permissions": perm_info
             })
+            
+            # Clean up temp files
+            try:
+                os.remove(validate_playbook)
+                os.remove(validate_inventory)
+            except:
+                pass
+                
         except subprocess.CalledProcessError as e:
             error = e.output.decode().strip()
             log_message(deployment_id, f"Validation failed on {vm_name}: {error}")
@@ -535,8 +611,9 @@ def run_shell_command():
     vms = data.get('vms')
     sudo = data.get('sudo', False)
     user = data.get('user', 'infadm')
+    working_dir = data.get('workingDir', '')
     
-    logger.info(f"Shell command request received: '{command}' on {len(vms)} VMs")
+    logger.info(f"Shell command request received: '{command}' on {len(vms)} VMs as user {user}")
     
     if not all([command, vms]):
         logger.error("Missing required parameters for shell command")
@@ -553,6 +630,7 @@ def run_shell_command():
         "vms": vms,
         "sudo": sudo,
         "user": user,
+        "working_dir": working_dir,
         "status": "running",
         "timestamp": time.time(),
         "logs": []
@@ -565,7 +643,7 @@ def run_shell_command():
     threading.Thread(target=process_shell_command, args=(deployment_id,)).start()
     
     logger.info(f"Shell command initiated with ID: {deployment_id}")
-    return jsonify({"deploymentId": deployment_id})
+    return jsonify({"deploymentId": deployment_id, "commandId": deployment_id})
 
 def process_shell_command(deployment_id):
     deployment = deployments[deployment_id]
@@ -575,22 +653,37 @@ def process_shell_command(deployment_id):
         vms = deployment["vms"]
         sudo = deployment["sudo"]
         user = deployment.get("user", "infadm")
+        working_dir = deployment.get("working_dir", "")
         
         log_message(deployment_id, f"Running command on {len(vms)} VMs: {command}")
         
         # Generate an ansible playbook for shell command
         playbook_file = f"/tmp/shell_command_{deployment_id}.yml"
         
+        # Enhanced playbook that properly escapes command and handles working directory
         with open(playbook_file, 'w') as f:
             f.write(f"""---
 - name: Run shell command on VMs
   hosts: command_targets
   gather_facts: false
   become: {"true" if sudo else "false"}
+  become_method: sudo
   become_user: {user}
   tasks:
+    # Create working directory if specified and doesn't exist
+    - name: Ensure working directory exists
+      ansible.builtin.file:
+        path: "{working_dir}"
+        state: directory
+        mode: '0755'
+      when: "{bool(working_dir)}" | bool
+      
     - name: Execute shell command
-      ansible.builtin.shell: {command}
+      ansible.builtin.shell: >
+        {command}
+      args:
+        executable: /bin/bash
+        chdir: "{working_dir if working_dir else '~'}"
       register: command_result
       
     - name: Log command result
@@ -608,17 +701,25 @@ def process_shell_command(deployment_id):
                 # Find VM IP from inventory
                 vm = next((v for v in inventory["vms"] if v["name"] == vm_name), None)
                 if vm:
-                    f.write(f"{vm_name} ansible_host={vm['ip']} ansible_user=infadm\n")
+                    f.write(f"{vm_name} ansible_host={vm['ip']} ansible_user=infadm ansible_ssh_private_key_file=/root/.ssh/id_rsa ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ControlMaster=auto -o ControlPath=/tmp/ansible-ssh/%h-%p-%r -o ControlPersist=60s'\n")
         
         logger.debug(f"Created Ansible inventory: {inventory_file}")
         
+        # Ensure control path directory exists
+        os.makedirs('/tmp/ansible-ssh', exist_ok=True)
+        os.chmod('/tmp/ansible-ssh', 0o777)
+        
         # Run ansible playbook
+        env_vars = os.environ.copy()
+        env_vars["ANSIBLE_CONFIG"] = "/etc/ansible/ansible.cfg"
+        env_vars["ANSIBLE_HOST_KEY_CHECKING"] = "False"
+        
         cmd = ["ansible-playbook", "-i", inventory_file, playbook_file, "-v"]
         
         log_message(deployment_id, f"Executing: {' '.join(cmd)}")
         logger.info(f"Executing Ansible command: {' '.join(cmd)}")
         
-        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env_vars)
         
         for line in process.stdout:
             log_message(deployment_id, line.strip())
@@ -635,8 +736,11 @@ def process_shell_command(deployment_id):
             logger.error(f"Shell command {deployment_id} failed with return code {process.returncode}")
         
         # Clean up temporary files
-        os.remove(playbook_file)
-        os.remove(inventory_file)
+        try:
+            os.remove(playbook_file)
+            os.remove(inventory_file)
+        except Exception as e:
+            logger.warning(f"Error cleaning up temporary files: {str(e)}")
         
         # Save deployment history after completion
         save_deployment_history()
@@ -647,374 +751,185 @@ def process_shell_command(deployment_id):
         logger.exception(f"Exception in shell command {deployment_id}: {str(e)}")
         save_deployment_history()
 
-# API to deploy SQL file
-@app.route('/api/deploy/sql', methods=['POST'])
-def deploy_sql():
-    data = request.json
-    ft = data.get('ft')
-    file_name = data.get('file')
-    db_user = data.get('dbUser')
-    db_password = data.get('dbPassword')
-    
-    logger.info(f"SQL deployment request received: {file_name} from FT {ft}")
-    
-    if not all([ft, file_name, db_user, db_password]):
-        logger.error("Missing required parameters for SQL deployment")
-        return jsonify({"error": "Missing required parameters"}), 400
-    
-    # Generate a unique deployment ID
-    deployment_id = str(uuid.uuid4())
-    
-    # Store deployment information
-    deployments[deployment_id] = {
-        "id": deployment_id,
-        "type": "sql",
-        "ft": ft,
-        "file": file_name,
-        "db_user": db_user,
-        "status": "running",
-        "timestamp": time.time(),
-        "logs": []
-    }
-    
-    # Save deployment history
-    save_deployment_history()
-    
-    # Start SQL deployment in a separate thread
-    threading.Thread(target=process_sql_deployment, args=(deployment_id, db_password)).start()
-    
-    logger.info(f"SQL deployment initiated with ID: {deployment_id}")
-    return jsonify({"deploymentId": deployment_id})
-
-def process_sql_deployment(deployment_id, db_password):
-    deployment = deployments[deployment_id]
-    
-    try:
-        ft = deployment["ft"]
-        file_name = deployment["file"]
-        db_user = deployment["db_user"]
-        
-        source_file = os.path.join(FIX_FILES_DIR, 'AllFts', ft, file_name)
-        
-        if not os.path.exists(source_file):
-            log_message(deployment_id, f"ERROR: SQL file not found: {source_file}")
-            deployments[deployment_id]["status"] = "failed"
-            logger.error(f"SQL file not found: {source_file}")
-            save_deployment_history()
-            return
-        
-        log_message(deployment_id, f"Starting SQL deployment for {file_name}")
-        
-        # Execute SQL file using psql
-        # Note: In a production environment, you should use a more secure approach for handling passwords
-        cmd = ["psql", "-U", db_user, "-h", "localhost", "-f", source_file]
-        
-        log_message(deployment_id, f"Executing SQL: {' '.join(cmd)}")
-        logger.info(f"Executing SQL with command: {' '.join(cmd)}")
-        
-        # Set PGPASSWORD environment variable for psql
-        env = os.environ.copy()
-        env["PGPASSWORD"] = db_password
-        
-        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
-        
-        for line in process.stdout:
-            log_message(deployment_id, line.strip())
-        
-        process.wait()
-        
-        if process.returncode == 0:
-            log_message(deployment_id, "SUCCESS: SQL deployment completed successfully")
-            deployments[deployment_id]["status"] = "success"
-            logger.info(f"SQL deployment {deployment_id} completed successfully")
-        else:
-            log_message(deployment_id, "ERROR: SQL deployment failed")
-            deployments[deployment_id]["status"] = "failed"
-            logger.error(f"SQL deployment {deployment_id} failed with return code {process.returncode}")
-        
-        # Save deployment history after completion
-        save_deployment_history()
-        
-    except Exception as e:
-        log_message(deployment_id, f"ERROR: Exception during SQL deployment: {str(e)}")
-        deployments[deployment_id]["status"] = "failed"
-        logger.exception(f"Exception in SQL deployment {deployment_id}: {str(e)}")
-        save_deployment_history()
-
-# API for systemd operations
-@app.route('/api/systemd/operation', methods=['POST'])
-def systemd_operation():
-    data = request.json
-    service = data.get('service')
-    operation = data.get('operation')
-    vms = data.get('vms')
-    
-    logger.info(f"Systemd operation request received: {operation} {service} on {len(vms) if vms else 0} VMs")
-    
-    if not all([service, operation, vms]):
-        logger.error("Missing required parameters for systemd operation")
-        return jsonify({"error": "Missing required parameters"}), 400
-    
-    if operation not in ['status', 'start', 'stop', 'restart']:
-        logger.error(f"Invalid systemd operation: {operation}")
-        return jsonify({"error": "Invalid operation"}), 400
-    
-    # Generate a unique deployment ID
-    deployment_id = str(uuid.uuid4())
-    
-    # Store deployment information
-    deployments[deployment_id] = {
-        "id": deployment_id,
-        "type": "systemd",
-        "service": service,
-        "operation": operation,
-        "vms": vms,
-        "status": "running",
-        "timestamp": time.time(),
-        "logs": []
-    }
-    
-    # Save deployment history
-    save_deployment_history()
-    
-    # Start systemd operation in a separate thread
-    threading.Thread(target=process_systemd_operation, args=(deployment_id,)).start()
-    
-    logger.info(f"Systemd operation initiated with ID: {deployment_id}")
-    return jsonify({"deploymentId": deployment_id})
-
-def process_systemd_operation(deployment_id):
-    deployment = deployments[deployment_id]
-    
-    try:
-        service = deployment["service"]
-        operation = deployment["operation"]
-        vms = deployment["vms"]
-        
-        log_message(deployment_id, f"Starting systemd {operation} for {service} on {len(vms)} VMs")
-        
-        # Generate an ansible playbook for systemd operation
-        playbook_file = f"/tmp/systemd_{deployment_id}.yml"
-        
-        with open(playbook_file, 'w') as f:
-            f.write(f"""---
-- name: Perform systemd operation on VMs
-  hosts: systemd_targets
-  gather_facts: false
-  become: true
-  become_user: infadm
-  tasks:
-    - name: {operation.capitalize()} {service} service
-      ansible.builtin.systemd:
-        name: {service}
-        state: {"started" if operation == 'start' else "stopped" if operation == 'stop' else "restarted" if operation == 'restart' else ""}
-        {"enabled: true" if operation == 'start' else ""}
-      when: '{operation}' != 'status'
-      
-    - name: Check {service} service status
-      ansible.builtin.command: systemctl status {service}
-      register: status_result
-      changed_when: false
-      ignore_errors: true
-      
-    - name: Log service status
-      ansible.builtin.debug:
-        var: status_result.stdout_lines
-""")
-        logger.debug(f"Created Ansible playbook for systemd operation: {playbook_file}")
-        
-        # Generate inventory file for ansible
-        inventory_file = f"/tmp/inventory_{deployment_id}"
-        
-        with open(inventory_file, 'w') as f:
-            f.write("[systemd_targets]\n")
-            for vm_name in vms:
-                # Find VM IP from inventory
-                vm = next((v for v in inventory["vms"] if v["name"] == vm_name), None)
-                if vm:
-                    f.write(f"{vm_name} ansible_host={vm['ip']} ansible_user=infadm\n")
-        
-        logger.debug(f"Created Ansible inventory: {inventory_file}")
-        
-        # Run ansible playbook
-        cmd = ["ansible-playbook", "-i", inventory_file, playbook_file, "-v"]
-        
-        log_message(deployment_id, f"Executing: {' '.join(cmd)}")
-        logger.info(f"Executing Ansible command: {' '.join(cmd)}")
-        
-        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        
-        for line in process.stdout:
-            log_message(deployment_id, line.strip())
-        
-        process.wait()
-        
-        if process.returncode == 0:
-            log_message(deployment_id, f"SUCCESS: Systemd {operation} operation completed successfully")
-            deployments[deployment_id]["status"] = "success"
-            logger.info(f"Systemd operation {deployment_id} completed successfully")
-        else:
-            log_message(deployment_id, f"ERROR: Systemd {operation} operation failed")
-            deployments[deployment_id]["status"] = "failed"
-            logger.error(f"Systemd operation {deployment_id} failed with return code {process.returncode}")
-        
-        # Clean up temporary files
-        os.remove(playbook_file)
-        os.remove(inventory_file)
-        
-        # Save deployment history after completion
-        save_deployment_history()
-        
-    except Exception as e:
-        log_message(deployment_id, f"ERROR: Exception during systemd operation: {str(e)}")
-        deployments[deployment_id]["status"] = "failed"
-        logger.exception(f"Exception in systemd operation {deployment_id}: {str(e)}")
-        save_deployment_history()
-
-# API to get deployment logs
-@app.route('/api/deploy/<deployment_id>/logs')
-def get_deployment_logs(deployment_id):
-    logger.info(f"Getting logs for deployment: {deployment_id}")
-    
-    if request.headers.get('Accept') == 'text/event-stream':
-        def generate():
-            # Send current logs
-            if deployment_id in deployments:
-                for log in deployments[deployment_id]["logs"]:
-                    yield f"data: {json.dumps({'message': log})}\n\n"
-                
-                current_log_count = len(deployments[deployment_id]["logs"])
-                
-                while deployments[deployment_id]["status"] == "running":
-                    if len(deployments[deployment_id]["logs"]) > current_log_count:
-                        for log in deployments[deployment_id]["logs"][current_log_count:]:
-                            yield f"data: {json.dumps({'message': log})}\n\n"
-                        
-                        current_log_count = len(deployments[deployment_id]["logs"])
-                    
-                    time.sleep(1)
-                
-                # Send completion status
-                status_msg = f"Deployment {deployments[deployment_id]['status']}."
-                yield f"data: {json.dumps({'status': deployments[deployment_id]['status'], 'message': status_msg})}\n\n"
-            else:
-                logger.warning(f"Attempted to stream logs for non-existent deployment: {deployment_id}")
-            
-            return
-        
-        return Response(generate(), mimetype='text/event-stream')
-    else:
-        # Return all logs for a deployment
-        if deployment_id not in deployments:
-            logger.error(f"Deployment not found with ID: {deployment_id}")
-            return jsonify({"error": "Deployment not found"}), 404
-        
-        return jsonify({"logs": deployments[deployment_id]["logs"]})
-
 # API to get deployment history
 @app.route('/api/deployments/history')
 def get_deployment_history():
     logger.info("Getting deployment history")
+    
+    # Check if deployments is empty, try to reload from file
+    if not deployments:
+        try:
+            if os.path.exists(DEPLOYMENT_HISTORY_FILE):
+                with open(DEPLOYMENT_HISTORY_FILE, 'r') as f:
+                    loaded_deployments = json.load(f)
+                    if loaded_deployments:
+                        # Update global deployments dictionary
+                        deployments.clear()
+                        deployments.update(loaded_deployments)
+                        logger.info(f"Reloaded {len(deployments)} deployments from history file")
+        except Exception as e:
+            logger.error(f"Failed to reload deployment history: {str(e)}")
+    
     # Sort deployments by timestamp, newest first
     sorted_deployments = sorted(
         [d for d in deployments.values()],
-        key=lambda x: x["timestamp"],
+        key=lambda x: x.get("timestamp", 0),
         reverse=True
     )
     
-    # Convert timestamp to ISO format but keep logs
+    # Convert timestamp to ISO format and ensure all required fields are present
     for d in sorted_deployments:
-        d["timestamp"] = time.strftime('%Y-%m-%dT%H:%M:%S', time.localtime(d["timestamp"]))
+        d["timestamp"] = time.strftime('%Y-%m-%dT%H:%M:%S', time.localtime(d.get("timestamp", 0)))
+        # Ensure logs field is present
+        if "logs" not in d:
+            d["logs"] = []
     
     return jsonify(sorted_deployments)
 
-# API to clear deployment logs
-@app.route('/api/deployments/clear', methods=['POST'])
-def clear_deployment_logs():
-    data = request.json
-    days = data.get('days', 0)
+# Add a rollback endpoint
+@app.route('/api/deploy/<deployment_id>/rollback', methods=['POST'])
+def rollback_deployment(deployment_id):
+    logger.info(f"Rolling back deployment with ID: {deployment_id}")
     
-    logger.info(f"Request to clear deployment logs older than {days} days")
+    if deployment_id not in deployments:
+        logger.error(f"Deployment not found with ID: {deployment_id}")
+        return jsonify({"error": "Deployment not found"}), 404
     
-    if days < 0:
-        return jsonify({"error": "Days must be a non-negative integer"}), 400
+    deployment = deployments[deployment_id]
     
-    count_before = len(deployments)
+    if deployment["type"] != "file":
+        logger.error(f"Cannot rollback non-file deployment type: {deployment['type']}")
+        return jsonify({"error": "Only file deployments can be rolled back"}), 400
     
-    # If days is 0, clear all logs
-    if days == 0:
-        deployments.clear()
-        logger.info(f"Cleared all deployment logs ({count_before} entries)")
-    else:
-        # Calculate cutoff time
-        cutoff_time = time.time() - (days * 24 * 60 * 60)
-        
-        # Remove deployments older than cutoff
-        to_remove = []
-        for deployment_id, deployment in deployments.items():
-            if deployment["timestamp"] < cutoff_time:
-                to_remove.append(deployment_id)
-        
-        for deployment_id in to_remove:
-            del deployments[deployment_id]
-            
-        logger.info(f"Cleared {len(to_remove)} deployment logs older than {days} days")
+    # Generate a new deployment ID for the rollback operation
+    rollback_id = str(uuid.uuid4())
     
-    # Save updated history
+    # Create a rollback deployment record
+    deployments[rollback_id] = {
+        "id": rollback_id,
+        "type": "rollback",
+        "original_deployment": deployment_id,
+        "ft": deployment.get("ft"),
+        "file": deployment.get("file"),
+        "target_path": deployment.get("target_path"),
+        "vms": deployment.get("vms"),
+        "user": deployment.get("user"),
+        "sudo": deployment.get("sudo", False),
+        "status": "running",
+        "timestamp": time.time(),
+        "logs": []
+    }
+    
+    # Save deployment history
     save_deployment_history()
     
-    return jsonify({"message": f"Cleared {count_before - len(deployments)} deployment logs"})
-
-# API to get shell command logs
-@app.route('/api/command/<deployment_id>/logs')
-def get_command_logs(deployment_id):
-    logger.info(f"Getting command logs for deployment: {deployment_id}")
+    # Start rollback in a separate thread
+    threading.Thread(target=process_rollback, args=(rollback_id,)).start()
     
-    if request.headers.get('Accept') == 'text/event-stream':
-        def generate():
-            # Send current logs
-            if deployment_id in deployments and deployments[deployment_id]["type"] == "command":
-                for log in deployments[deployment_id]["logs"]:
-                    yield f"data: {json.dumps({'message': log})}\n\n"
-                
-                current_log_count = len(deployments[deployment_id]["logs"])
-                
-                while deployments[deployment_id]["status"] == "running":
-                    if len(deployments[deployment_id]["logs"]) > current_log_count:
-                        for log in deployments[deployment_id]["logs"][current_log_count:]:
-                            yield f"data: {json.dumps({'message': log})}\n\n"
-                        
-                        current_log_count = len(deployments[deployment_id]["logs"])
-                    
-                    time.sleep(1)
-                
-                # Send completion status
-                status_msg = f"Command execution {deployments[deployment_id]['status']}."
-                yield f"data: {json.dumps({'status': deployments[deployment_id]['status'], 'message': status_msg})}\n\n"
-            else:
-                logger.warning(f"Attempted to stream logs for non-existent command: {deployment_id}")
-            
-            return
-        
-        return Response(generate(), mimetype='text/event-stream')
-    else:
-        # Return all logs for a command
-        if deployment_id not in deployments:
-            logger.error(f"Command not found with ID: {deployment_id}")
-            return jsonify({"error": "Command not found"}), 404
-        
-        return jsonify({"logs": deployments[deployment_id]["logs"]})
+    logger.info(f"Rollback initiated with ID: {rollback_id}")
+    return jsonify({"deploymentId": rollback_id})
 
-# Helper function to log messages
-def log_message(deployment_id, message):
-    logger.debug(f"[{deployment_id}] {message}")
-    if deployment_id in deployments:
-        deployments[deployment_id]["logs"].append(message)
+def process_rollback(rollback_id):
+    rollback = deployments[rollback_id]
+    
+    try:
+        original_id = rollback["original_deployment"]
+        vms = rollback["vms"]
+        target_path = os.path.join(rollback["target_path"], rollback["file"])
+        user = rollback["user"]
+        sudo = rollback["sudo"]
         
-        # To ensure logs are persisted even if the app crashes
-        # we save to history after every 5 logs
-        if len(deployments[deployment_id]["logs"]) % 5 == 0:
-            save_deployment_history()
+        log_message(rollback_id, f"Starting rollback for deployment {original_id}")
+        
+        # Find most recent backup for each VM
+        for vm_name in vms:
+            vm = next((v for v in inventory["vms"] if v["name"] == vm_name), None)
+            if not vm:
+                log_message(rollback_id, f"ERROR: VM {vm_name} not found in inventory")
+                continue
+                
+            # Generate playbook for finding and restoring backup
+            playbook_file = f"/tmp/rollback_{rollback_id}_{vm_name}.yml"
+            with open(playbook_file, 'w') as f:
+                f.write(f"""---
+- name: Rollback file deployment
+  hosts: {vm_name}
+  gather_facts: false
+  become: {"true" if sudo else "false"}
+  become_user: {user}
+  tasks:
+    - name: Find backup files
+      ansible.builtin.find:
+        paths: "{os.path.dirname(target_path)}"
+        patterns: "{os.path.basename(target_path)}.bak.*"
+      register: backup_files
+      
+    - name: Set fact for newest backup
+      ansible.builtin.set_fact:
+        newest_backup: "{{ backup_files.files | sort(attribute='mtime') | last }}"
+      when: backup_files.matched > 0
+      
+    - name: Restore from backup
+      ansible.builtin.copy:
+        src: "{{ newest_backup.path }}"
+        dest: "{target_path}"
+        remote_src: yes
+      when: backup_files.matched > 0
+      register: restore_result
+      
+    - name: Log restore result
+      ansible.builtin.debug:
+        msg: "Restored {{ newest_backup.path }} to {target_path}"
+      when: backup_files.matched > 0 and restore_result.changed
+      
+    - name: No backups found
+      ansible.builtin.debug:
+        msg: "No backup files found for {target_path}"
+      when: backup_files.matched == 0
+""")
+                
+            # Generate inventory file
+            inventory_file = f"/tmp/rollback_inventory_{rollback_id}_{vm_name}"
+            with open(inventory_file, 'w') as f:
+                f.write(f"{vm_name} ansible_host={vm['ip']} ansible_user=infadm ansible_ssh_private_key_file=/root/.ssh/id_rsa")
+                
+            # Run ansible playbook
+            cmd = ["ansible-playbook", "-i", inventory_file, playbook_file, "-v"]
+            log_message(rollback_id, f"Running rollback on {vm_name}")
+            
+            env_vars = os.environ.copy()
+            env_vars["ANSIBLE_CONFIG"] = "/etc/ansible/ansible.cfg"
+            env_vars["ANSIBLE_HOST_KEY_CHECKING"] = "False"
+            
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env_vars)
+            
+            for line in process.stdout:
+                log_message(rollback_id, line.strip())
+                
+            process.wait()
+            
+            if process.returncode == 0:
+                log_message(rollback_id, f"Rollback completed successfully on {vm_name}")
+            else:
+                log_message(rollback_id, f"Rollback failed on {vm_name}")
+                
+            # Cleanup
+            try:
+                os.remove(playbook_file)
+                os.remove(inventory_file)
+            except:
+                pass
+                
+        # Update rollback status
+        deployments[rollback_id]["status"] = "success"
+        log_message(rollback_id, "Rollback operation completed")
+        save_deployment_history()
+        
+    except Exception as e:
+        log_message(rollback_id, f"ERROR: Exception during rollback: {str(e)}")
+        deployments[rollback_id]["status"] = "failed"
+        logger.exception(f"Exception in rollback {rollback_id}: {str(e)}")
+        save_deployment_history()
 
 if __name__ == '__main__':
     from waitress import serve

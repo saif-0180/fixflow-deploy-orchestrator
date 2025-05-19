@@ -7,7 +7,15 @@ import SystemctlOperations from "@/components/SystemctlOperations";
 import DeploymentHistory from "@/components/DeploymentHistory";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      retry: 1,
+      staleTime: 30000
+    }
+  }
+});
 
 const Index = () => {
   return (
@@ -34,19 +42,19 @@ const Index = () => {
               </TabsTrigger>
             </TabsList>
             
-            <TabsContent value="file" className="p-6 bg-black rounded-md">
+            <TabsContent value="file" className="p-6 bg-[#1a2b42] rounded-md shadow-lg">
               <FileOperations />
             </TabsContent>
             
-            <TabsContent value="sql" className="p-6 bg-black rounded-md">
+            <TabsContent value="sql" className="p-6 bg-[#1a2b42] rounded-md shadow-lg">
               <SqlOperations />
             </TabsContent>
             
-            <TabsContent value="systemctl" className="p-6 bg-black rounded-md">
+            <TabsContent value="systemctl" className="p-6 bg-[#1a2b42] rounded-md shadow-lg">
               <SystemctlOperations />
             </TabsContent>
             
-            <TabsContent value="history" className="p-6 bg-black rounded-md">
+            <TabsContent value="history" className="p-6 bg-[#1a2b42] rounded-md shadow-lg">
               <DeploymentHistory />
             </TabsContent>
           </Tabs>

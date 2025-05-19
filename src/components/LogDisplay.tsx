@@ -12,7 +12,7 @@ interface LogDisplayProps {
 const LogDisplay: React.FC<LogDisplayProps> = ({ 
   logs, 
   height = "400px", 
-  fixedHeight = true,  // Default to fixed height
+  fixedHeight = true,
   title = "Logs" 
 }) => {
   const logEndRef = useRef<HTMLDivElement>(null);
@@ -41,10 +41,12 @@ const LogDisplay: React.FC<LogDisplayProps> = ({
             <div key={index} className="mb-1">
               {log.includes('ERROR') || log.includes('FAILED') ? (
                 <span className="text-red-400">{log}</span>
-              ) : log.includes('SUCCESS') || log.includes('COMPLETED') ? (
+              ) : log.includes('SUCCESS') || log.includes('COMPLETED') || log.includes('successfully') ? (
                 <span className="text-green-400">{log}</span>
               ) : log.includes('WARNING') ? (
                 <span className="text-yellow-300">{log}</span>
+              ) : log.includes('Checksum=') ? (
+                <span className="text-blue-300">{log}</span>
               ) : (
                 <span className="text-gray-200">{log}</span>
               )}
