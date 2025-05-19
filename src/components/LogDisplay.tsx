@@ -35,7 +35,7 @@ const LogDisplay: React.FC<LogDisplayProps> = ({
         }}
       >
         {logs.length === 0 ? (
-          <p className="text-gray-400">No logs available. Start a deployment to see logs here.</p>
+          <p className="text-gray-400">No logs available. Start an operation to see logs here.</p>
         ) : (
           logs.map((log, index) => (
             <div key={index} className="mb-1">
