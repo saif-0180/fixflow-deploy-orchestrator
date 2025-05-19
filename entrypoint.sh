@@ -15,5 +15,17 @@ mkdir -p /tmp/ansible-ssh
 chmod -R 777 /tmp/ansible-ssh
 echo "Ansible SSH directory created with permissions 777"
 
+# Ensure log directory exists with proper permissions
+mkdir -p /app/logs
+touch /app/logs/application.log
+chmod -R 777 /app/logs
+echo "Logs directory created with permissions 777"
+
+# Display SSH key fingerprints for debugging
+if [ -f "/root/.ssh/id_rsa" ]; then
+  echo "SSH key fingerprints:"
+  ssh-keygen -l -f /root/.ssh/id_rsa
+fi
+
 # Run the specified command
 exec "$@"

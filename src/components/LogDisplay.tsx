@@ -27,7 +27,7 @@ const LogDisplay: React.FC<LogDisplayProps> = ({
     <div className="space-y-2 h-full">
       <h3 className="font-medium text-[#F79B72]">{title}</h3>
       <ScrollArea 
-        className="bg-[#1a2b42] rounded-md p-4 font-mono text-sm shadow-md" 
+        className="bg-[#0A1929] rounded-md p-4 font-mono text-sm shadow-md border border-[#2A4759]" 
         style={{ 
           height: fixedHeight ? height : "auto", 
           maxHeight: height,
@@ -39,7 +39,7 @@ const LogDisplay: React.FC<LogDisplayProps> = ({
         ) : (
           logs.map((log, index) => (
             <div key={index} className="mb-1">
-              {log.includes('ERROR') || log.includes('FAILED') ? (
+              {log.includes('ERROR') || log.includes('FAILED') || log.includes('failed') ? (
                 <span className="text-red-400">{log}</span>
               ) : log.includes('SUCCESS') || log.includes('COMPLETED') || log.includes('successfully') ? (
                 <span className="text-green-400">{log}</span>

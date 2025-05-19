@@ -1,15 +1,7 @@
-
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { 
-  Select, 
-  SelectContent, 
-  SelectItem, 
-  SelectTrigger, 
-  SelectValue 
-} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -82,28 +74,58 @@ const DeploymentHistory: React.FC = () => {
       }
     },
     enabled: !!selectedDeploymentId,
-    onSuccess: (data) => {
-      if (data.logs && data.logs.length > 0) {
-        setDeploymentLogs(data.logs);
-      } else {
-        // If no logs in response, check if the selected deployment has logs
-        const selectedDeployment = deployments.find(d => d.id === selectedDeploymentId);
-        if (selectedDeployment?.logs && selectedDeployment.logs.length > 0) {
-          setDeploymentLogs(selectedDeployment.logs);
+    meta: {
+      onSuccess: (data: any) => {
+        if (data.logs && data.logs.length > 0) {
+          setDeploymentLogs(data.logs);
         } else {
-          setDeploymentLogs(["No logs available for this deployment"]);
+          // If no logs in response, check if the selected deployment has logs
+          const selectedDeployment = deployments.find(d => d.id === selectedDeploymentId);
+          if (selectedDeployment?.logs && selectedDeployment.logs.length > 0) {
+            setDeploymentLogs(selectedDeployment.logs);
+          } else {
+            setDeploymentLogs(["No logs available for this deployment"]);
+          }
         }
+      },
+      onError: () => {
+        toast({
+          title: "Error",
+          description: "Failed to fetch logs for this deployment",
+          variant: "destructive",
+        });
+        setDeploymentLogs(["Error loading logs. Please try again."]);
       }
-    },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to fetch logs for this deployment",
-        variant: "destructive",
-      });
-      setDeploymentLogs(["Error loading logs. Please try again."]);
     }
   });
+
+  // Use effect to handle success and error cases for the logs query
+  useEffect(() => {
+    if (selectedDeploymentId) {
+      refetchLogs().then((result) => {
+        if (result.isSuccess && result.data) {
+          if (result.data.logs && result.data.logs.length > 0) {
+            setDeploymentLogs(result.data.logs);
+          } else {
+            // If no logs in response, check if the selected deployment has logs
+            const selectedDeployment = deployments.find(d => d.id === selectedDeploymentId);
+            if (selectedDeployment?.logs && selectedDeployment.logs.length > 0) {
+              setDeploymentLogs(selectedDeployment.logs);
+            } else {
+              setDeploymentLogs(["No logs available for this deployment"]);
+            }
+          }
+        } else if (result.isError) {
+          toast({
+            title: "Error",
+            description: "Failed to fetch logs for this deployment",
+            variant: "destructive",
+          });
+          setDeploymentLogs(["Error loading logs. Please try again."]);
+        }
+      });
+    }
+  }, [selectedDeploymentId, deployments, refetchLogs, toast]);
 
   // Clear logs mutation
   const clearLogsMutation = useMutation({
@@ -187,6 +209,17 @@ const DeploymentHistory: React.FC = () => {
       setSelectedDeploymentId(deployments[0].id);
     }
   }, [deployments, selectedDeploymentId]);
+
+  // Force refresh deployments on initial load
+  useEffect(() => {
+    refetchDeployments();
+    // Set up periodic refresh every 10 seconds
+    const intervalId = setInterval(() => {
+      refetchDeployments();
+    }, 10000);
+    
+    return () => clearInterval(intervalId);
+  }, [refetchDeployments]);
 
   // Extract selected deployment for display
   const selectedDeployment = selectedDeploymentId 
