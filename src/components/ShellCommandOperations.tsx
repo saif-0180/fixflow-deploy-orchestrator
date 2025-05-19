@@ -27,7 +27,7 @@ const ShellCommandOperations: React.FC = () => {
   const [useCustomPath, setUseCustomPath] = useState<boolean>(false);
   const [customPath, setCustomPath] = useState<string>("");
   const [selectedUser, setSelectedUser] = useState<string>("infadm");
-  const [users, setUsers] = useState<string[]>(["infadm", "abpwrk1", "root"]);
+  const [users] = useState<string[]>(["infadm", "abpwrk1", "root"]);
 
   // Fetch VMs on component mount
   useEffect(() => {
@@ -49,25 +49,8 @@ const ShellCommandOperations: React.FC = () => {
         });
       }
     };
-
-    // Fetch users
-    const fetchUsers = async () => {
-      try {
-        const response = await fetch('/api/users');
-        if (!response.ok) {
-          throw new Error('Failed to fetch users');
-        }
-        const data = await response.json();
-        setUsers(data);
-      } catch (error) {
-        console.error('Error fetching users:', error);
-        // Fall back to default users if API fails
-        setUsers(["infadm", "abpwrk1", "root"]);
-      }
-    };
     
     fetchVMs();
-    fetchUsers();
   }, [toast]);
 
   // Shell command mutation
@@ -96,11 +79,12 @@ const ShellCommandOperations: React.FC = () => {
       setDeploymentId(data.deploymentId);
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast({
         title: "Command Started",
         description: "Shell command execution has been initiated.",
       });
+      startPollingLogs(data.deploymentId);
     },
     onError: (error) => {
       toast({
@@ -111,45 +95,51 @@ const ShellCommandOperations: React.FC = () => {
     },
   });
 
-  // Fetch log updates
-  useEffect(() => {
-    if (!deploymentId) return;
-
-    let isMounted = true;
-    const fetchLogs = async () => {
+  // Add a function to poll for logs
+  const startPollingLogs = (id: string) => {
+    if (!id) return;
+    
+    // Start with a clear log display
+    setLogs([]);
+    
+    // Set up polling interval
+    const pollInterval = setInterval(async () => {
       try {
-        const response = await fetch(`/api/deploy/${deploymentId}/logs`);
+        const response = await fetch(`/api/deploy/${id}/logs`);
         if (!response.ok) {
           throw new Error('Failed to fetch logs');
         }
         
         const data = await response.json();
-        if (isMounted && data.logs) {
+        if (data.logs) {
           setLogs(data.logs);
         }
         
+        // Stop polling if operation is complete
         if (data.status !== 'running' && data.status !== 'pending') {
-          // Deployment completed or failed, no need to poll anymore
-          return;
+          clearInterval(pollInterval);
         }
-        
-        // Continue polling if still running
-        setTimeout(fetchLogs, 1000);
       } catch (error) {
         console.error('Error fetching logs:', error);
+        clearInterval(pollInterval);
       }
-    };
-
-    // Start polling for logs
-    fetchLogs();
+    }, 1000); // Poll every second
     
+    // Clean up on unmount
     return () => {
-      isMounted = false;
+      clearInterval(pollInterval);
     };
+  };
+
+  // Fetch log updates if deploymentId is set
+  useEffect(() => {
+    if (deploymentId) {
+      return startPollingLogs(deploymentId);
+    }
   }, [deploymentId]);
 
-  const handleExecute = (e: React.FormEvent) => {
-    e.preventDefault(); // Prevent form submission which causes page reload
+  const handleExecute = (e: React.MouseEvent) => {
+    e.preventDefault(); // Prevent default action
     
     if (!command.trim()) {
       toast({
@@ -187,7 +177,7 @@ const ShellCommandOperations: React.FC = () => {
       <h2 className="text-2xl font-bold text-[#F79B72] mb-4">Shell Command Execution</h2>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <form onSubmit={handleExecute} className="space-y-4 bg-[#EEEEEE] p-4 rounded-md">
+        <div className="space-y-4 bg-[#EEEEEE] p-4 rounded-md">
           <div>
             <Label htmlFor="command" className="text-[#F79B72]">Command</Label>
             <Input
@@ -254,13 +244,14 @@ const ShellCommandOperations: React.FC = () => {
           </div>
 
           <Button 
-            type="submit"
+            type="button"
+            onClick={handleExecute}
             className="bg-[#F79B72] text-[#2A4759] hover:bg-[#F79B72]/80"
             disabled={shellCommandMutation.isPending}
           >
             {shellCommandMutation.isPending ? "Executing..." : "Execute Command"}
           </Button>
-        </form>
+        </div>
 
         <div>
           <LogDisplay logs={logs} height="400px" fixedHeight={true} title="Shell Command Logs" />

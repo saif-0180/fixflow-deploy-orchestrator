@@ -11,8 +11,8 @@ import { Loader2 } from 'lucide-react';
 
 interface Deployment {
   id: string;
-  type: 'file' | 'sql' | 'systemd' | 'command' | 'rollback';
-  status: 'running' | 'success' | 'failed';
+  type: 'file' | 'sql' | 'systemd' | 'command' | 'rollback' | string; // Added string as fallback
+  status: 'running' | 'success' | 'failed' | string; // Added string as fallback
   timestamp: string;
   ft?: string;
   file?: string;
@@ -101,7 +101,7 @@ const DeploymentHistory: React.FC = () => {
         return () => clearInterval(interval);
       }
     }
-  }, [selectedDeploymentId, deployments, toast]);
+  }, [selectedDeploymentId, deployments]);
 
   // Clear logs mutation
   const clearLogsMutation = useMutation({
@@ -235,6 +235,19 @@ const DeploymentHistory: React.FC = () => {
     }
   };
 
+  // Get deployment details safely with a fallback
+  const getSelectedDeployment = (): Deployment | undefined => {
+    if (!selectedDeploymentId) return undefined;
+    return deployments.find(d => d.id === selectedDeploymentId);
+  };
+
+  // Safe access to deployment summary
+  const getDeploymentSummary = (): string => {
+    const deployment = getSelectedDeployment();
+    if (!deployment) return "Select a deployment to view details";
+    return formatDeploymentSummary(deployment);
+  };
+
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold text-[#F79B72] mb-4">Deployment History</h2>
@@ -315,14 +328,11 @@ const DeploymentHistory: React.FC = () => {
           <LogDisplay 
             logs={deploymentLogs} 
             height="400px" 
-            title={selectedDeploymentId 
-              ? `Deployment Details - ${formatDeploymentSummary(deployments.find(d => d.id === selectedDeploymentId) || { type: 'unknown', status: 'unknown' } as Deployment)}` 
-              : "Select a deployment to view details"
-            } 
+            title={`Deployment Details - ${getDeploymentSummary()}`}
           />
           
-          {selectedDeploymentId && deployments.find(d => d.id === selectedDeploymentId)?.type === 'file' && 
-           deployments.find(d => d.id === selectedDeploymentId)?.status === 'success' && (
+          {selectedDeploymentId && getSelectedDeployment()?.type === 'file' && 
+           getSelectedDeployment()?.status === 'success' && (
             <div className="flex justify-end">
               <Button 
                 onClick={() => handleRollback(selectedDeploymentId)}
