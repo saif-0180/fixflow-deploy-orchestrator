@@ -97,6 +97,7 @@ const FileOperations: React.FC = () => {
         title: "Deployment Started",
         description: "File deployment has been initiated.",
       });
+      // Don't navigate away - let the logs update in place
     },
     onError: (error) => {
       toast({
@@ -200,59 +201,54 @@ const FileOperations: React.FC = () => {
     },
   });
 
+  // Add a function to poll for logs
+  const startPollingLogs = (id: string, logSetter: React.Dispatch<React.SetStateAction<string[]>>) => {
+    if (!id) return;
+    
+    // Start with a clear log display
+    logSetter([]);
+    
+    // Set up polling interval
+    const pollInterval = setInterval(async () => {
+      try {
+        const response = await fetch(`/api/deploy/${id}/logs`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch logs');
+        }
+        
+        const data = await response.json();
+        if (data.logs) {
+          logSetter(data.logs);
+        }
+        
+        // Stop polling if operation is complete
+        if (data.status !== 'running' && data.status !== 'pending') {
+          clearInterval(pollInterval);
+        }
+      } catch (error) {
+        console.error('Error fetching logs:', error);
+        clearInterval(pollInterval);
+      }
+    }, 1000); // Poll every second
+    
+    // Clean up on unmount
+    return () => {
+      clearInterval(pollInterval);
+    };
+  };
+
   // Fetch log updates for file deployments
   useEffect(() => {
-    if (!deploymentId) return;
-
-    const eventSource = new EventSource(`/api/deploy/${deploymentId}/logs`);
-    
-    eventSource.onmessage = (event) => {
-      const logData = JSON.parse(event.data);
-      setFileLogs(prev => [...prev, logData.message]);
-      
-      if (logData.status === 'completed' || logData.status === 'failed') {
-        eventSource.close();
-      }
-    };
-
-    eventSource.onerror = () => {
-      eventSource.close();
-    };
-
-    return () => {
-      eventSource.close();
-    };
+    if (deploymentId) {
+      return startPollingLogs(deploymentId, setFileLogs);
+    }
   }, [deploymentId]);
 
   // Fetch log updates for shell commands
   useEffect(() => {
-    if (!shellCommandId) return;
-
-    const eventSource = new EventSource(`/api/command/${shellCommandId}/logs`);
-    
-    eventSource.onmessage = (event) => {
-      try {
-        const logData = JSON.parse(event.data);
-        setShellLogs(prev => [...prev, logData.message]);
-        
-        if (logData.status === 'completed' || logData.status === 'failed') {
-          eventSource.close();
-        }
-      } catch (error) {
-        console.error("Error processing shell command log:", error);
-        setShellLogs(prev => [...prev, "Error processing log data"]);
-      }
-    };
-
-    eventSource.onerror = (error) => {
-      console.error("EventSource error:", error);
-      setShellLogs(prev => [...prev, "Connection error. Please try again."]);
-      eventSource.close();
-    };
-
-    return () => {
-      eventSource.close();
-    };
+    if (shellCommandId) {
+      return startPollingLogs(shellCommandId, setShellLogs);
+    }
   }, [shellCommandId]);
 
   // Add a useEffect to fetch VMs
@@ -275,7 +271,9 @@ const FileOperations: React.FC = () => {
     fetchVMs();
   }, []);
 
-  const handleDeploy = () => {
+  const handleDeploy = (e: React.MouseEvent) => {
+    e.preventDefault(); // Prevent the default action
+    
     if (!selectedFt) {
       toast({
         title: "Validation Error",
@@ -316,7 +314,9 @@ const FileOperations: React.FC = () => {
     deployMutation.mutate();
   };
 
-  const handleRunShellCommand = () => {
+  const handleRunShellCommand = (e: React.MouseEvent) => {
+    e.preventDefault(); // Prevent the default action
+    
     if (!shellCommand) {
       toast({
         title: "Validation Error",
@@ -438,6 +438,7 @@ const FileOperations: React.FC = () => {
 
             <div className="flex space-x-2">
               <Button 
+                type="button" // Changed to button type
                 onClick={handleDeploy} 
                 className="bg-[#F79B72] text-[#2A4759] hover:bg-[#F79B72]/80"
                 disabled={deployMutation.isPending}
@@ -533,6 +534,7 @@ const FileOperations: React.FC = () => {
             />
 
             <Button 
+              type="button" // Changed to button type
               onClick={handleRunShellCommand} 
               className="bg-[#F79B72] text-[#2A4759] hover:bg-[#F79B72]/80"
               disabled={shellCommandMutation.isPending}

@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, QueryClient } from '@tanstack/react-query';
 import { 
   Select, 
   SelectContent, 
@@ -72,11 +72,14 @@ const SystemctlOperations: React.FC = () => {
       setDeploymentId(data.deploymentId);
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast({
         title: "Operation Started",
         description: `Systemctl ${selectedOperation} operation has been initiated.`,
       });
+      
+      // Start polling for logs
+      startPollingLogs(data.deploymentId);
     },
     onError: (error) => {
       toast({
@@ -86,6 +89,42 @@ const SystemctlOperations: React.FC = () => {
       });
     },
   });
+
+  // Add a function to poll for logs
+  const startPollingLogs = (id: string) => {
+    if (!id) return;
+    
+    // Start with a clear log display
+    setLogs([]);
+    
+    // Set up polling interval
+    const pollInterval = setInterval(async () => {
+      try {
+        const response = await fetch(`/api/deploy/${id}/logs`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch logs');
+        }
+        
+        const data = await response.json();
+        if (data.logs) {
+          setLogs(data.logs);
+        }
+        
+        // Stop polling if operation is complete
+        if (data.status !== 'running' && data.status !== 'pending') {
+          clearInterval(pollInterval);
+        }
+      } catch (error) {
+        console.error('Error fetching logs:', error);
+        clearInterval(pollInterval);
+      }
+    }, 1000); // Poll every second
+    
+    // Clean up on unmount
+    return () => {
+      clearInterval(pollInterval);
+    };
+  };
 
   // Add a useEffect to fetch VMs
   useEffect(() => {
@@ -112,41 +151,11 @@ const SystemctlOperations: React.FC = () => {
     fetchVMs();
   }, [toast]);
 
-  // Fetch log updates
+  // Fetch log updates if deploymentId is set but no polling is active
   useEffect(() => {
-    if (!deploymentId) return;
-
-    let isMounted = true;
-    const fetchLogs = async () => {
-      try {
-        const response = await fetch(`/api/deploy/${deploymentId}/logs`);
-        if (!response.ok) {
-          throw new Error('Failed to fetch logs');
-        }
-        
-        const data = await response.json();
-        if (isMounted && data.logs) {
-          setLogs(data.logs);
-        }
-        
-        if (data.status !== 'running' && data.status !== 'pending') {
-          // Deployment completed or failed, no need to poll anymore
-          return;
-        }
-        
-        // Continue polling if still running
-        setTimeout(fetchLogs, 1000);
-      } catch (error) {
-        console.error('Error fetching logs:', error);
-      }
-    };
-
-    // Start polling for logs
-    fetchLogs();
-    
-    return () => {
-      isMounted = false;
-    };
+    if (deploymentId) {
+      return startPollingLogs(deploymentId);
+    }
   }, [deploymentId]);
 
   const handleExecute = (e: React.FormEvent) => {
@@ -161,16 +170,7 @@ const SystemctlOperations: React.FC = () => {
       return;
     }
     
-    if (!selectedOperation) {
-      toast({
-        title: "Validation Error",
-        description: "Please select an operation.",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    if (selectedVMs.length === 0) {
+    if (!selectedVMs.length) {
       toast({
         title: "Validation Error",
         description: "Please select at least one VM.",
@@ -179,6 +179,7 @@ const SystemctlOperations: React.FC = () => {
       return;
     }
 
+    // Reset logs
     setLogs([]);
     systemctlMutation.mutate();
   };
@@ -235,7 +236,8 @@ const SystemctlOperations: React.FC = () => {
           </div>
 
           <Button 
-            type="submit"
+            type="button" // Change to button to prevent form submission
+            onClick={handleExecute}
             className="bg-[#F79B72] text-[#2A4759] hover:bg-[#F79B72]/80"
             disabled={systemctlMutation.isPending}
           >

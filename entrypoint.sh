@@ -28,6 +28,22 @@ touch /app/logs/application.log
 chmod -R 777 /app/logs
 echo "Logs directory created with permissions 777"
 
+# Create directories for inventory and output
+mkdir -p /app/inventory
+chmod -R 777 /app/inventory
+
+# Fix common YAML issues in Ansible templates
+fix_yaml_file() {
+  local file="$1"
+  if [ -f "$file" ]; then
+    # Replace problematic YAML syntax
+    sed -i 's/when: "True" | bool/when: true/g' "$file"
+    sed -i 's/when: "False" | bool/when: false/g' "$file"
+    sed -i "s/when: 'status' != 'status'/when: operation != 'status'/g" "$file"
+    echo "Fixed YAML syntax in $file"
+  fi
+}
+
 # Set ansible.cfg to use the correct control path
 cat > /etc/ansible/ansible.cfg << EOF
 [defaults]
@@ -42,6 +58,7 @@ become_user = infadm
 private_key_file = /root/.ssh/id_rsa
 control_path_dir = /tmp/ansible-ssh
 forks = 10
+yaml_valid_extensions = .yaml, .yml, .json
 
 [privilege_escalation]
 become = True
@@ -55,6 +72,20 @@ ssh_args = -o ControlMaster=auto -o ControlPersist=60s -o StrictHostKeyChecking=
 EOF
 
 echo "Ansible configuration created at /etc/ansible/ansible.cfg"
+
+# Hook for patching ansible playbooks before execution
+# Set up a directory watcher to fix YAML issues in ansible playbooks
+while true; do
+  for file in /tmp/shell_command_*.yml /tmp/systemd_*.yml; do
+    if [[ -f "$file" && -s "$file" ]]; then
+      if [[ ! -f "${file}.fixed" ]]; then
+        fix_yaml_file "$file"
+        touch "${file}.fixed"
+      fi
+    fi
+  done
+  sleep 1
+done &
 
 # Run the specified command
 exec "$@"
