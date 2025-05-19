@@ -1,3 +1,4 @@
+
 #!/bin/bash
 # SSH key setup
 if [ -d "/app/ssh-keys" ]; then

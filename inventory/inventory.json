@@ -1,0 +1,10 @@
+{
+  "vms": [
+    {"name": "batch1", "type": "batch", "ip": "54.163.12.71"},
+    {"name": "airflow", "type": "airflow", "ip": "52.90.114.33"},
+    {"name": "imdg1", "type": "imdg", "ip": "54.164.38.145"}
+  ],
+  "users": ["infadm", "abpwrk1"],
+  "db_users": ["postgres", "dbadmin"],
+  "systemd_services": ["docker.service", "kafka", "zookeeper"]
+}
