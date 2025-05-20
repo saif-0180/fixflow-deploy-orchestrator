@@ -1157,10 +1157,11 @@ def clear_deployment_history():
 @app.route('/api/systemd/<operation>', methods=['POST'])
 def systemd_operation(operation):
     data = request.json
+    operation = data.get('operation', '').strip().lower()
     service = data.get('service')
     vms = data.get('vms')
     
-    if not all([service, vms]):
+    if not all([service, vms, operation]):
         logger.error("Missing required parameters for systemd operation")
         return jsonify({"error": "Missing required parameters"}), 400
     

@@ -1,7 +1,7 @@
 {
   "vms": [
-    {"name": "batch1", "type": "batch", "ip": "54.163.12.71"},
-    {"name": "airflow", "type": "airflow", "ip": "52.90.114.33"},
+    {"name": "batch1", "type": "batch", "ip": "52.90.129.147"},
+    {"name": "airflow", "type": "airflow", "ip": "44.204.30.65"},
     {"name": "imdg1", "type": "imdg", "ip": "54.164.38.145"}
   ],
   "users": ["infadm", "abpwrk1"],
