@@ -1,8 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { 
@@ -12,165 +10,103 @@ import {
   SelectTrigger, 
   SelectValue 
 } from "@/components/ui/select";
-import LogDisplay from '@/components/LogDisplay';
 import VMSelector from '@/components/VMSelector';
+import LogDisplay from '@/components/LogDisplay';
 
-const SystemctlOperations: React.FC = () => {
+const SystemctlOperations = () => {
   const { toast } = useToast();
   const [selectedService, setSelectedService] = useState<string>("");
-  const [selectedOperation, setSelectedOperation] = useState<string>("status");
   const [selectedVMs, setSelectedVMs] = useState<string[]>([]);
+  const [selectedOperation, setSelectedOperation] = useState<string>("status");
   const [logs, setLogs] = useState<string[]>([]);
   const [deploymentId, setDeploymentId] = useState<string | null>(null);
-  const [vms, setVms] = useState<string[]>([]);
-  const [useSudo, setUseSudo] = useState<boolean>(true);
 
   // Fetch systemd services
   const { data: services = [] } = useQuery({
     queryKey: ['systemd-services'],
     queryFn: async () => {
-      try {
-        const response = await fetch('/api/systemd/services');
-        if (!response.ok) {
-          throw new Error('Failed to fetch systemd services');
-        }
-        return response.json();
-      } catch (error) {
-        console.error('Error fetching systemd services:', error);
-        toast({
-          title: "Error",
-          description: "Failed to fetch systemd services",
-          variant: "destructive",
-        });
-        return [];
+      const response = await fetch('/api/systemd/services');
+      if (!response.ok) {
+        throw new Error('Failed to fetch systemd services');
       }
+      return response.json();
     }
   });
+
+  // Handle VM selection changes
+  const handleVMSelectionChange = (vms: string[]) => {
+    setSelectedVMs(vms);
+  };
 
   // Systemctl operation mutation
   const systemctlMutation = useMutation({
     mutationFn: async () => {
-      // Log the request data for debugging
-      console.log("Systemctl request:", {
-        service: selectedService,
-        operation: selectedOperation,
-        vms: selectedVMs,
-        sudo: useSudo
-      });
+      console.log(`Executing systemctl operation. Operation: ${selectedOperation}, Service: ${selectedService}`);
       
-      const response = await fetch('/api/systemd/operation', {
+      const response = await fetch(`/api/systemd/${selectedOperation}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          service: selectedService,
           operation: selectedOperation,
-          vms: selectedVMs,
-          sudo: useSudo
+          service: selectedService,
+          vms: selectedVMs
         }),
       });
       
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(errorText || 'Failed to execute systemctl operation');
+        throw new Error(`Failed to execute systemctl operation: ${errorText}`);
       }
       
       const data = await response.json();
       setDeploymentId(data.deploymentId);
       return data;
     },
-    onSuccess: (data) => {
+    onSuccess: () => {
       toast({
-        title: "Operation Started",
+        title: "Systemctl Operation Started",
         description: `Systemctl ${selectedOperation} operation has been initiated.`,
       });
-      
-      // Start polling for logs immediately
-      startPollingLogs(data.deploymentId);
     },
     onError: (error) => {
-      console.error("Systemctl operation error:", error);
       toast({
-        title: "Operation Failed",
-        description: error instanceof Error ? error.message : "Unknown error occurred",
+        title: "Systemctl Operation Failed",
+        description: error instanceof Error ? error.message : "Failed to execute systemctl operation",
         variant: "destructive",
       });
     },
   });
 
-  // Add a function to poll for logs
-  const startPollingLogs = (id: string) => {
-    if (!id) return;
-    
-    // Start with a clear log display
-    setLogs([]);
-    console.log(`Starting to poll logs for deployment ${id}`);
-    
-    // Set up polling interval
-    const pollInterval = setInterval(async () => {
-      try {
-        const response = await fetch(`/api/deploy/${id}/logs`);
-        if (!response.ok) {
-          throw new Error('Failed to fetch logs');
-        }
-        
-        const data = await response.json();
-        console.log(`Received logs for ${id}:`, data);
-        
-        if (data.logs) {
-          setLogs(data.logs);
-        }
-        
-        // Stop polling if operation is complete
-        if (data.status !== 'running' && data.status !== 'pending') {
-          console.log(`Deployment ${id} is complete with status: ${data.status}`);
-          clearInterval(pollInterval);
-        }
-      } catch (error) {
-        console.error('Error fetching logs:', error);
-        clearInterval(pollInterval);
-      }
-    }, 1000); // Poll every second
-    
-    return () => clearInterval(pollInterval);
-  };
-
-  // Add a useEffect to fetch VMs
+  // Fetch log updates with reduced polling frequency
   useEffect(() => {
-    const fetchVMs = async () => {
+    if (!deploymentId) return;
+
+    // Initial logs fetch
+    const fetchLogs = async () => {
       try {
-        const response = await fetch('/api/vms');
-        if (!response.ok) {
-          throw new Error('Failed to fetch VMs');
+        const response = await fetch(`/api/deploy/${deploymentId}/logs`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data && data.logs) {
+            setLogs(data.logs);
+            
+            // If not complete, schedule another fetch, but with longer interval
+            if (data.status !== 'completed' && data.status !== 'failed') {
+              setTimeout(fetchLogs, 3000); // Poll every 3 seconds
+            }
+          }
         }
-        const data = await response.json();
-        // Extract VM names from the response
-        const vmNames = data.map((vm: any) => vm.name);
-        setVms(vmNames);
       } catch (error) {
-        console.error('Error fetching VMs:', error);
-        toast({
-          title: "Error",
-          description: "Failed to fetch VM list",
-          variant: "destructive",
-        });
+        console.error("Error fetching logs:", error);
       }
     };
     
-    fetchVMs();
-  }, [toast]);
-
-  // Fetch log updates if deploymentId is set but no polling is active
-  useEffect(() => {
-    if (deploymentId) {
-      return startPollingLogs(deploymentId);
-    }
+    fetchLogs();
   }, [deploymentId]);
 
-  const handleExecute = (e: React.FormEvent) => {
-    e.preventDefault(); // Prevent form submission which causes page reload
-    
+  const handleExecute = () => {
     if (!selectedService) {
       toast({
         title: "Validation Error",
@@ -180,7 +116,7 @@ const SystemctlOperations: React.FC = () => {
       return;
     }
     
-    if (!selectedVMs.length) {
+    if (selectedVMs.length === 0) {
       toast({
         title: "Validation Error",
         description: "Please select at least one VM.",
@@ -189,29 +125,18 @@ const SystemctlOperations: React.FC = () => {
       return;
     }
 
-    // Validate the operation
-    if (!['status', 'start', 'stop', 'restart'].includes(selectedOperation)) {
-      toast({
-        title: "Validation Error",
-        description: "Invalid operation. Must be one of: start, stop, restart, status",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // Reset logs
     setLogs([]);
     systemctlMutation.mutate();
   };
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-[#F79B72] mb-4">Systemd Service Management</h2>
+      <h2 className="text-2xl font-bold text-[#F79B72] mb-4">Systemctl Operations</h2>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <form className="space-y-4 bg-[#EEEEEE] p-4 rounded-md">
+        <div className="space-y-4">
           <div>
-            <Label htmlFor="service-select" className="text-[#F79B72]">Select Service</Label>
+            <label htmlFor="service-select" className="block text-[#F79B72] mb-2">Select Service</label>
             <Select value={selectedService} onValueChange={setSelectedService}>
               <SelectTrigger id="service-select" className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]">
                 <SelectValue placeholder="Select a service" className="text-[#2A4759]" />
@@ -225,48 +150,36 @@ const SystemctlOperations: React.FC = () => {
           </div>
 
           <div>
-            <Label htmlFor="operation-select" className="text-[#F79B72]">Select Operation</Label>
+            <label htmlFor="operation-select" className="block text-[#F79B72] mb-2">Select Operation</label>
             <Select value={selectedOperation} onValueChange={setSelectedOperation}>
               <SelectTrigger id="operation-select" className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]">
                 <SelectValue placeholder="Select an operation" className="text-[#2A4759]" />
               </SelectTrigger>
               <SelectContent className="bg-[#DDDDDD] border-[#2A4759] text-[#2A4759]">
-                <SelectItem value="status" className="text-[#2A4759]">status</SelectItem>
-                <SelectItem value="start" className="text-[#2A4759]">start</SelectItem>
-                <SelectItem value="stop" className="text-[#2A4759]">stop</SelectItem>
-                <SelectItem value="restart" className="text-[#2A4759]">restart</SelectItem>
+                <SelectItem value="status" className="text-[#2A4759]">Status</SelectItem>
+                <SelectItem value="start" className="text-[#2A4759]">Start</SelectItem>
+                <SelectItem value="stop" className="text-[#2A4759]">Stop</SelectItem>
+                <SelectItem value="restart" className="text-[#2A4759]">Restart</SelectItem>
               </SelectContent>
             </Select>
           </div>
-
-          <VMSelector 
-            vms={vms} 
-            selectedVMs={selectedVMs} 
-            setSelectedVMs={setSelectedVMs}
-            selectorId="systemctl" 
-          />
-
-          <div className="flex items-center space-x-2">
-            <Checkbox 
-              id="use-sudo" 
-              checked={useSudo} 
-              onCheckedChange={(checked) => setUseSudo(checked as boolean)}
-            />
-            <Label htmlFor="use-sudo" className="text-[#2A4759]">Use sudo</Label>
+          
+          <div>
+            <label className="block text-[#F79B72] mb-2">Select VMs</label>
+            <VMSelector onSelectionChange={handleVMSelectionChange} />
           </div>
 
           <Button 
-            type="button"
-            onClick={handleExecute}
+            onClick={handleExecute} 
             className="bg-[#F79B72] text-[#2A4759] hover:bg-[#F79B72]/80"
             disabled={systemctlMutation.isPending}
           >
-            {systemctlMutation.isPending ? "Executing..." : "Execute"}
+            {systemctlMutation.isPending ? "Executing..." : "Execute Operation"}
           </Button>
-        </form>
+        </div>
 
-        <div>
-          <LogDisplay logs={logs} height="400px" fixedHeight={true} title="Systemctl Operation Logs" />
+        <div className="h-full">
+          <LogDisplay logs={logs} height="400px" title="Systemctl Operation Logs" fixAutoScroll={true} />
         </div>
       </div>
     </div>

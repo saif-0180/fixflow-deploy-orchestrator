@@ -30,7 +30,7 @@ const DeploymentHistory: React.FC = () => {
   const [deploymentLogs, setDeploymentLogs] = useState<string[]>([]);
   const [clearDays, setClearDays] = useState<number>(30);
   
-  // Fetch deployment history with more frequent polling
+  // Fetch deployment history with reduced polling frequency
   const { data: deployments = [], refetch: refetchDeployments, isLoading: isLoadingDeployments } = useQuery({
     queryKey: ['deployment-history'],
     queryFn: async () => {
@@ -50,8 +50,9 @@ const DeploymentHistory: React.FC = () => {
         throw error;
       }
     },
-    staleTime: 1000, // Consider data fresh for 1 second to enable more frequent updates
-    refetchInterval: 5000, // Refetch every 5 seconds to keep deployment history current
+    staleTime: 1800000, // 30 minutes - consider data fresh for 30 minutes
+    refetchInterval: 0, // Disable automatic refetching
+    refetchOnWindowFocus: false, // Don't refetch on window focus
   });
 
   // Function to fetch logs for a specific deployment
@@ -91,22 +92,12 @@ const DeploymentHistory: React.FC = () => {
     }
   };
 
-  // Effect to load logs when a deployment is selected and set up polling if needed
+  // Effect to load logs when a deployment is selected - no continuous polling
   useEffect(() => {
     if (selectedDeploymentId) {
       fetchDeploymentLogs(selectedDeploymentId);
-      
-      // Set up polling for logs if the deployment is still running
-      const selectedDeployment = deployments.find(d => d.id === selectedDeploymentId);
-      if (selectedDeployment && selectedDeployment.status === 'running') {
-        const interval = setInterval(() => {
-          fetchDeploymentLogs(selectedDeploymentId);
-        }, 1000); // Poll every second for active deployments
-        
-        return () => clearInterval(interval);
-      }
     }
-  }, [selectedDeploymentId, deployments]);
+  }, [selectedDeploymentId]);
 
   // Clear logs mutation
   const clearLogsMutation = useMutation({
@@ -189,34 +180,26 @@ const DeploymentHistory: React.FC = () => {
     }
   }, [deployments, selectedDeploymentId]);
 
-  // Force refresh deployments on initial load and set up periodic refresh
-  useEffect(() => {
-    // Initial fetch
-    refetchDeployments();
-    
-    // Set up periodic refresh every 5 seconds
-    const intervalId = setInterval(() => {
-      refetchDeployments();
-    }, 5000);
-    
-    return () => clearInterval(intervalId);
-  }, [refetchDeployments]);
-
   // Format deployment summary for display
   const formatDeploymentSummary = (deployment: Deployment): string => {
+    // Convert timestamp to readable format
+    const dateTime = deployment.timestamp ? 
+      new Date(deployment.timestamp).toLocaleString() : 
+      'Unknown date';
+
     switch (deployment.type) {
       case 'file':
-        return `File: ${deployment.ft || 'N/A'}/${deployment.file || 'N/A'} (${deployment.status})`;
+        return `FT=${deployment.ft || 'N/A'}, Status=${deployment.status}, VMs=${deployment.vms?.join(', ') || 'N/A'}, ${dateTime}`;
       case 'sql':
-        return `SQL: ${deployment.ft || 'N/A'}/${deployment.file || 'N/A'} (${deployment.status})`;
+        return `SQL: ${deployment.ft || 'N/A'}/${deployment.file || 'N/A'}, Status=${deployment.status}, ${dateTime}`;
       case 'systemd':
-        return `Systemd: ${deployment.operation || 'N/A'} ${deployment.service || 'N/A'} (${deployment.status})`;
+        return `Service ${deployment.operation || 'N/A'} ${deployment.service || 'N/A'}, VMs=${deployment.vms?.join(', ') || 'N/A'}, ${dateTime}`;
       case 'command':
-        return `Command: ${deployment.command ? `${deployment.command.substring(0, 30)}${deployment.command.length > 30 ? '...' : ''}` : 'N/A'} (${deployment.status})`;
+        return `Command: ${deployment.command ? `${deployment.command.substring(0, 30)}${deployment.command.length > 30 ? '...' : ''}` : 'N/A'}, ${dateTime}`;
       case 'rollback':
-        return `Rollback: ${deployment.ft || 'N/A'}/${deployment.file || 'N/A'} (${deployment.status})`;
+        return `Rollback: ${deployment.ft || 'N/A'}/${deployment.file || 'N/A'}, ${dateTime}`;
       default:
-        return `${deployment.type} (${deployment.status})`;
+        return `${deployment.type} (${deployment.status}), ${dateTime}`;
     }
   };
 
@@ -290,9 +273,6 @@ const DeploymentHistory: React.FC = () => {
                             <div>
                               {formatDeploymentSummary(deployment)}
                             </div>
-                            <div className="text-xs">
-                              {new Date(deployment.timestamp * 1000).toLocaleString()}
-                            </div>
                           </div>
                         </div>
                       ))
@@ -335,6 +315,7 @@ const DeploymentHistory: React.FC = () => {
             logs={deploymentLogs} 
             height="400px" 
             title={`Deployment Details - ${getDeploymentSummary()}`}
+            fixAutoScroll={true} // New prop to control auto scrolling
           />
           
           {selectedDeploymentId && getSelectedDeployment()?.type === 'file' && 
