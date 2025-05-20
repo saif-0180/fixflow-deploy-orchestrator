@@ -1225,7 +1225,11 @@ def process_systemd_operation(deployment_id, operation, service, vms):
       
     - name: Display service status
       debug:
-        var: service_result
+        # var: service_result
+        # msg: "Service '{{ service_result.name }}' is {{ service_result.status.ActiveState }} (SubState: {{ service_result.status.SubState }})"
+        msg: >
+          Service {{ service_name }} is {{ 'running' if service_status.status.ActiveState == 'active' else 'not running' }},
+          and it is {{ 'enabled' if service_status.enabled else 'disabled' }}.
       when: service_file.stat.exists and '{operation}' == 'status'
       
     - name: Perform systemd operation
