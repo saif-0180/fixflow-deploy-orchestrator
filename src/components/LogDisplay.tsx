@@ -26,14 +26,34 @@ const LogDisplay: React.FC<LogDisplayProps> = ({
   const logEndRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState<boolean>(true);
   const [previousLogsLength, setPreviousLogsLength] = useState<number>(0);
+  const [lastAutoScrollTime, setLastAutoScrollTime] = useState<number>(0);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
 
+  // More controlled auto-scroll with rate limiting
   useEffect(() => {
     // Only auto-scroll if enabled and logs have changed
     if (autoScroll && logEndRef.current && logs.length !== previousLogsLength) {
-      logEndRef.current.scrollIntoView({ behavior: 'smooth' });
+      // Rate limit scrolling to prevent excessive scrolling
+      const now = Date.now();
+      if (now - lastAutoScrollTime > 500) { // Only scroll at most twice per second
+        logEndRef.current.scrollIntoView({ behavior: 'smooth' });
+        setLastAutoScrollTime(now);
+      }
       setPreviousLogsLength(logs.length);
     }
-  }, [logs, autoScroll, previousLogsLength]);
+  }, [logs, autoScroll, previousLogsLength, lastAutoScrollTime]);
+
+  // Reset scroll position when log content changes significantly
+  useEffect(() => {
+    if (Math.abs(logs.length - previousLogsLength) > 5) {
+      // If we've added more than 5 new log entries at once, force a scroll update
+      if (autoScroll && logEndRef.current) {
+        setTimeout(() => {
+          logEndRef.current?.scrollIntoView({ behavior: 'auto' });
+        }, 50);
+      }
+    }
+  }, [logs.length, previousLogsLength, autoScroll]);
 
   // Get badge color based on status
   const getBadgeColorClass = () => {
@@ -82,6 +102,7 @@ const LogDisplay: React.FC<LogDisplayProps> = ({
         )}
       </div>
       <ScrollArea 
+        ref={scrollAreaRef}
         className="bg-[#0A1929] rounded-md p-4 font-mono text-sm shadow-md border border-[#2A4759]" 
         style={{ 
           height: fixedHeight ? height : "auto", 

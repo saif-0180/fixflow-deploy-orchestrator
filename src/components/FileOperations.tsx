@@ -37,7 +37,6 @@ const FileOperations: React.FC = () => {
   const [shellWorkingDir, setShellWorkingDir] = useState<string>("");
   const [shellCommandId, setShellCommandId] = useState<string | null>(null);
   const [shellLogs, setShellLogs] = useState<string[]>([]);
-  const [vms, setVms] = useState<string[]>([]);
   const [validateUseSudo, setValidateUseSudo] = useState<boolean>(false);
   const [userHomes, setUserHomes] = useState<{[key: string]: string}>({
     'infadm': '/home/infadm',
@@ -265,25 +264,15 @@ const FileOperations: React.FC = () => {
     return () => clearInterval(pollInterval);
   };
 
-  // Add a useEffect to fetch VMs
-  useEffect(() => {
-    const fetchVMs = async () => {
-      try {
-        const response = await fetch('/api/vms');
-        if (!response.ok) {
-          throw new Error('Failed to fetch VMs');
-        }
-        const data = await response.json();
-        // Extract VM names from the response
-        const vmNames = data.map((vm: any) => vm.name);
-        setVms(vmNames);
-      } catch (error) {
-        console.error('Error fetching VMs:', error);
-      }
-    };
-    
-    fetchVMs();
-  }, []);
+  // Handle VM selection changes for file operations
+  const handleVMSelectionChange = (vms: string[]) => {
+    setSelectedVMs(vms);
+  };
+  
+  // Handle VM selection changes for shell operations
+  const handleShellVMSelectionChange = (vms: string[]) => {
+    setShellSelectedVMs(vms);
+  };
 
   const handleDeploy = (e: React.MouseEvent) => {
     e.preventDefault(); // Prevent the default action
@@ -424,7 +413,7 @@ const FileOperations: React.FC = () => {
               <Checkbox 
                 id="sudo" 
                 checked={useSudo} 
-                onCheckedChange={(checked) => setUseSudo(checked as boolean)}
+                onCheckedChange={(checked) => setUseSudo(checked === true)}
               />
               <Label htmlFor="sudo" className="text-[#F79B72]">Use sudo</Label>
             </div>
@@ -433,17 +422,15 @@ const FileOperations: React.FC = () => {
               <Checkbox 
                 id="backup" 
                 checked={createBackup} 
-                onCheckedChange={(checked) => setCreateBackup(checked as boolean)}
+                onCheckedChange={(checked) => setCreateBackup(checked === true)}
               />
               <Label htmlFor="backup" className="text-[#F79B72]">Create backup if file exists</Label>
             </div>
 
-            <VMSelector 
-              vms={vms} 
-              selectedVMs={selectedVMs} 
-              setSelectedVMs={setSelectedVMs}
-              selectorId="file-deployment" 
-            />
+            <div>
+              <label className="block text-[#F79B72] mb-2">Select VMs</label>
+              <VMSelector onSelectionChange={handleVMSelectionChange} />
+            </div>
 
             <div className="flex space-x-2">
               <Button 
@@ -460,7 +447,7 @@ const FileOperations: React.FC = () => {
                   <Checkbox 
                     id="validate-sudo" 
                     checked={validateUseSudo} 
-                    onCheckedChange={(checked) => setValidateUseSudo(checked as boolean)}
+                    onCheckedChange={(checked) => setValidateUseSudo(checked === true)}
                   />
                   <Label htmlFor="validate-sudo" className="text-[#F79B72]">Sudo</Label>
                 </div>
@@ -507,7 +494,7 @@ const FileOperations: React.FC = () => {
                 id="use-home-path" 
                 checked={useUserHomePath} 
                 onCheckedChange={(checked) => {
-                  setUseUserHomePath(checked as boolean);
+                  setUseUserHomePath(checked === true);
                   if (checked) {
                     setShellWorkingDir('');
                   }
@@ -545,17 +532,15 @@ const FileOperations: React.FC = () => {
               <Checkbox 
                 id="shell-sudo" 
                 checked={shellUseSudo} 
-                onCheckedChange={(checked) => setShellUseSudo(checked as boolean)}
+                onCheckedChange={(checked) => setShellUseSudo(checked === true)}
               />
               <Label htmlFor="shell-sudo" className="text-[#F79B72]">Use sudo</Label>
             </div>
             
-            <VMSelector 
-              vms={vms} 
-              selectedVMs={shellSelectedVMs} 
-              setSelectedVMs={setShellSelectedVMs}
-              selectorId="shell-command" 
-            />
+            <div>
+              <label className="block text-[#F79B72] mb-2">Select VMs</label>
+              <VMSelector onSelectionChange={handleShellVMSelectionChange} />
+            </div>
 
             <Button 
               type="button"
