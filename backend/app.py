@@ -1226,19 +1226,19 @@ def process_systemd_operation(deployment_id, operation, service, vms):
     - name: Display service status
       debug:
         var: service_result
-      when: service_file.stat.exists and operation == 'status'
+      when: service_file.stat.exists and '{operation}' == 'status'
       
     - name: Perform systemd operation
       systemd:
         name: "{service}"
         state: "{operation if operation != 'status' else 'started'}"
-      when: service_file.stat.exists and operation != 'status'
+      when: service_file.stat.exists and '{operation}' != 'status'
       register: operation_result
       
     - name: Log operation result
       debug:
         msg: "Service operation {operation} on {service} was successful"
-      when: service_file.stat.exists and operation != 'status'
+      when: service_file.stat.exists and '{operation}' != 'status'
 """)
         
         # Generate inventory file for ansible
