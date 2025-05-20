@@ -1,64 +1,119 @@
 
-import React from 'react';
-import { Label } from "@/components/ui/label";
+import React, { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 
-interface VMSelectorProps {
-  vms: string[];
-  selectedVMs: string[];
-  setSelectedVMs: React.Dispatch<React.SetStateAction<string[]>>;
-  selectorId: string; // Added unique ID for each selector
+export interface VMSelectorProps {
+  onSelectionChange: (vms: string[]) => void;
+  selectedTypes?: string[];
 }
 
-const VMSelector: React.FC<VMSelectorProps> = ({ vms, selectedVMs, setSelectedVMs, selectorId }) => {
-  const handleSelectAll = () => {
-    if (selectedVMs.length === vms.length) {
-      setSelectedVMs([]);
-    } else {
-      setSelectedVMs([...vms]);
-    }
+const VMSelector: React.FC<VMSelectorProps> = ({ onSelectionChange, selectedTypes = [] }) => {
+  const [selectedVMs, setSelectedVMs] = useState<string[]>([]);
+  const [vmsByType, setVmsByType] = useState<Record<string, string[]>>({});
+
+  // Fetch VMs from inventory
+  const { data: vms = [], isLoading } = useQuery({
+    queryKey: ['vms'],
+    queryFn: async () => {
+      try {
+        const response = await fetch('/api/vms');
+        if (!response.ok) {
+          console.error('Error fetching VMs:', await response.text());
+          throw new Error('Failed to fetch VMs');
+        }
+        return response.json();
+      } catch (error) {
+        console.error('Error fetching VMs:', error);
+        throw error;
+      }
+    },
+    refetchOnWindowFocus: false,
+  });
+
+  // Group VMs by type when data loads
+  useEffect(() => {
+    const groupedVMs: Record<string, string[]> = {};
+    
+    vms.forEach((vm: any) => {
+      if (!groupedVMs[vm.type]) {
+        groupedVMs[vm.type] = [];
+      }
+      groupedVMs[vm.type].push(vm.name);
+    });
+    
+    setVmsByType(groupedVMs);
+  }, [vms]);
+
+  // Handle checkbox changes
+  const handleVMChange = (vmName: string, checked: boolean) => {
+    const updatedSelection = checked
+      ? [...selectedVMs, vmName]
+      : selectedVMs.filter(vm => vm !== vmName);
+    
+    setSelectedVMs(updatedSelection);
+    onSelectionChange(updatedSelection);
   };
 
-  const handleVMSelection = (vm: string) => {
-    if (selectedVMs.includes(vm)) {
-      setSelectedVMs(selectedVMs.filter(v => v !== vm));
+  // Handle type selection
+  const handleTypeSelection = (type: string, checked: boolean) => {
+    let updatedSelection = [...selectedVMs];
+    
+    if (checked) {
+      // Add all VMs of this type that aren't already selected
+      const vmsToAdd = vmsByType[type]?.filter(vm => !selectedVMs.includes(vm)) || [];
+      updatedSelection = [...updatedSelection, ...vmsToAdd];
     } else {
-      setSelectedVMs([...selectedVMs, vm]);
+      // Remove all VMs of this type
+      updatedSelection = updatedSelection.filter(vm => !vmsByType[type]?.includes(vm));
     }
+    
+    setSelectedVMs(updatedSelection);
+    onSelectionChange(updatedSelection);
   };
 
-  const allSelected = vms.length > 0 && selectedVMs.length === vms.length;
+  // Check if all VMs of a type are selected
+  const isTypeSelected = (type: string) => {
+    return vmsByType[type]?.every(vm => selectedVMs.includes(vm)) || false;
+  };
+
+  if (isLoading) {
+    return <div>Loading VM list...</div>;
+  }
 
   return (
-    <div>
-      <Label htmlFor={`vm-select-${selectorId}`} className="text-[#F79B72] block mb-2">Select VMs</Label>
-      
-      <div className="bg-[#DDDDDD] border border-[#2A4759] rounded-md p-2">
-        <div className="flex items-center space-x-2 mb-2 pb-2 border-b border-[#2A4759]">
-          <Checkbox 
-            id={`select-all-${selectorId}`}
-            checked={allSelected} 
-            onCheckedChange={handleSelectAll}
-          />
-          <Label htmlFor={`select-all-${selectorId}`} className="text-[#2A4759] cursor-pointer">
-            Select All VMs
-          </Label>
-        </div>
-        
-        <div className="grid grid-cols-2 gap-2">
-          {vms.map((vm) => (
-            <div key={`${vm}-${selectorId}`} className="flex items-center space-x-2">
-              <Checkbox 
-                id={`${vm}-${selectorId}`}
-                checked={selectedVMs.includes(vm)} 
-                onCheckedChange={() => handleVMSelection(vm)}
-              />
-              <Label htmlFor={`${vm}-${selectorId}`} className="text-[#2A4759] cursor-pointer">
-                {vm}
-              </Label>
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-3">
+        {Object.keys(vmsByType).length === 0 ? (
+          <p className="text-sm text-gray-400">No VMs available in inventory.</p>
+        ) : (
+          Object.entries(vmsByType).map(([type, typeVMs]) => (
+            <div key={type} className="space-y-2">
+              <div className="flex items-center space-x-2">
+                <Checkbox 
+                  id={`type-${type}`}
+                  checked={isTypeSelected(type)}
+                  onCheckedChange={(checked) => handleTypeSelection(type, checked === true)}
+                />
+                <Label htmlFor={`type-${type}`} className="font-medium">{type.toUpperCase()}</Label>
+              </div>
+              
+              <div className="ml-6 space-y-1">
+                {typeVMs.map((vm) => (
+                  <div key={vm} className="flex items-center space-x-2">
+                    <Checkbox 
+                      id={`vm-${vm}`}
+                      checked={selectedVMs.includes(vm)}
+                      onCheckedChange={(checked) => handleVMChange(vm, checked === true)}
+                    />
+                    <Label htmlFor={`vm-${vm}`}>{vm}</Label>
+                  </div>
+                ))}
+              </div>
             </div>
-          ))}
-        </div>
+          ))
+        )}
       </div>
     </div>
   );

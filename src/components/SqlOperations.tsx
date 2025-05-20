@@ -15,6 +15,13 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import LogDisplay from '@/components/LogDisplay';
 
+interface DbConnection {
+  hostname: string;
+  ip: string;
+  port: string;
+  users: string[];
+}
+
 const SqlOperations = () => {
   const { toast } = useToast();
   const [selectedFt, setSelectedFt] = useState<string>("");
@@ -29,6 +36,9 @@ const SqlOperations = () => {
   const [customHost, setCustomHost] = useState<boolean>(false);
   const [customUser, setCustomUser] = useState<boolean>(false);
   const [customPort, setCustomPort] = useState<boolean>(false);
+  const [selectedConnection, setSelectedConnection] = useState<string>("");
+  const [availableDbUsers, setAvailableDbUsers] = useState<string[]>([]);
+  const [operationStatus, setOperationStatus] = useState<'idle' | 'loading' | 'running' | 'success' | 'failed' | 'completed'>('idle');
 
   // Fetch all FTs
   const { data: fts = [] } = useQuery({
@@ -56,6 +66,31 @@ const SqlOperations = () => {
     enabled: !!selectedFt,
   });
 
+  // Fetch DB connections from inventory
+  const { data: dbConnections = [] } = useQuery({
+    queryKey: ['db-connections'],
+    queryFn: async () => {
+      try {
+        const response = await fetch('/api/db/connections');
+        if (!response.ok) {
+          console.error('Error fetching DB connections:', await response.text());
+          throw new Error('Failed to fetch DB connections');
+        }
+        return response.json();
+      } catch (error) {
+        console.error('Error fetching DB connections:', error);
+        // Fallback - try to get from the inventory json directly
+        const invResponse = await fetch('/api/inventory');
+        if (!invResponse.ok) {
+          throw new Error('Failed to fetch inventory');
+        }
+        const inventory = await invResponse.json();
+        return inventory.db_connections || [];
+      }
+    },
+    refetchOnWindowFocus: false,
+  });
+
   // Fetch DB users from inventory
   const { data: dbUsers = [] } = useQuery({
     queryKey: ['db-users'],
@@ -68,21 +103,32 @@ const SqlOperations = () => {
     }
   });
 
-  // Fetch VM hosts from inventory
-  const { data: vms = [] } = useQuery({
-    queryKey: ['vms'],
-    queryFn: async () => {
-      const response = await fetch('/api/vms');
-      if (!response.ok) {
-        throw new Error('Failed to fetch VMs');
+  // Update available users when connection changes
+  useEffect(() => {
+    if (!customUser && selectedConnection && dbConnections.length > 0) {
+      const connection = dbConnections.find((conn: DbConnection) => 
+        conn.hostname === selectedConnection || conn.ip === selectedConnection
+      );
+      
+      if (connection) {
+        setAvailableDbUsers(connection.users);
+        setSelectedDbUser("");
+        
+        if (!customPort) {
+          setPort(connection.port);
+        }
+        
+        if (!customHost) {
+          setHostname(connection.ip);
+        }
       }
-      return response.json();
     }
-  });
+  }, [selectedConnection, dbConnections, customUser, customPort, customHost]);
 
   // Deploy SQL mutation
   const sqlDeployMutation = useMutation({
     mutationFn: async () => {
+      setOperationStatus('loading');
       const response = await fetch('/api/deploy/sql', {
         method: 'POST',
         headers: {
@@ -105,6 +151,7 @@ const SqlOperations = () => {
       
       const data = await response.json();
       setDeploymentId(data.deploymentId);
+      setOperationStatus('running');
       return data;
     },
     onSuccess: () => {
@@ -114,18 +161,23 @@ const SqlOperations = () => {
       });
     },
     onError: (error) => {
+      setOperationStatus('failed');
       toast({
         title: "SQL Deployment Failed",
-        description: error.message,
+        description: error instanceof Error ? error.message : "Failed to deploy SQL",
         variant: "destructive",
       });
     },
   });
 
-  // Fetch log updates once, not continuous polling
+  // Fetch log updates with improved completion detection
   useEffect(() => {
     if (!deploymentId) return;
     
+    let pollingInterval: number | null = null;
+    let consecutiveSameLogCount = 0;
+    let previousLogLength = 0;
+
     // Initial logs fetch
     const fetchLogs = async () => {
       try {
@@ -135,21 +187,55 @@ const SqlOperations = () => {
           if (data && data.logs) {
             setLogs(data.logs);
             
-            // If not complete, schedule another fetch
-            if (data.status !== 'completed' && data.status !== 'failed') {
-              setTimeout(fetchLogs, 3000);
+            // Check if status is explicitly completed or failed
+            if (data.status === 'completed' || data.status === 'success') {
+              setOperationStatus('success');
+              if (pollingInterval) clearTimeout(pollingInterval);
+              return;
             }
+            
+            if (data.status === 'failed') {
+              setOperationStatus('failed');
+              if (pollingInterval) clearTimeout(pollingInterval);
+              return;
+            }
+            
+            // Check for implicit completion by checking if logs haven't changed for a while
+            if (data.logs.length === previousLogLength) {
+              consecutiveSameLogCount++;
+              // If logs haven't changed for 3 consecutive checks, consider it completed
+              if (consecutiveSameLogCount >= 3) {
+                console.log("Operation appears to be complete (logs unchanged)");
+                setOperationStatus('success');
+                if (pollingInterval) clearTimeout(pollingInterval);
+                return;
+              }
+            } else {
+              consecutiveSameLogCount = 0;
+              previousLogLength = data.logs.length;
+            }
+            
+            // If not complete, schedule another fetch
+            pollingInterval = window.setTimeout(fetchLogs, 3000);
           }
         }
       } catch (error) {
         console.error("Error fetching logs:", error);
+        // Error handling - still try a few times
+        consecutiveSameLogCount++;
+        if (consecutiveSameLogCount >= 3) {
+          setOperationStatus('failed');
+          if (pollingInterval) clearTimeout(pollingInterval);
+        } else {
+          pollingInterval = window.setTimeout(fetchLogs, 3000);
+        }
       }
     };
     
     fetchLogs();
     
     return () => {
-      // Cleanup if needed
+      if (pollingInterval) clearTimeout(pollingInterval);
     };
   }, [deploymentId]);
 
@@ -218,6 +304,7 @@ const SqlOperations = () => {
     }
 
     setLogs([]);
+    setOperationStatus('idle');
     sqlDeployMutation.mutate();
   };
 
@@ -260,18 +347,21 @@ const SqlOperations = () => {
               </Select>
             </div>
 
-            {/* Host selection */}
+            {/* Database Connection Selection */}
             <div className="space-y-2">
               <div className="flex items-center space-x-2">
                 <Checkbox 
-                  id="custom-host" 
+                  id="custom-connection" 
                   checked={customHost} 
                   onCheckedChange={(checked) => {
                     setCustomHost(checked === true);
-                    if (!checked) setHostname("");
+                    if (checked === false) {
+                      setHostname("");
+                      setSelectedConnection("");
+                    }
                   }}
                 />
-                <Label htmlFor="custom-host" className="text-[#F79B72]">Enter hostname manually</Label>
+                <Label htmlFor="custom-connection" className="text-[#F79B72]">Enter database connection manually</Label>
               </div>
               
               {customHost ? (
@@ -287,15 +377,15 @@ const SqlOperations = () => {
                 </div>
               ) : (
                 <div>
-                  <Label htmlFor="host-select" className="text-[#F79B72]">Select Host</Label>
-                  <Select value={hostname} onValueChange={setHostname}>
-                    <SelectTrigger id="host-select" className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]">
-                      <SelectValue placeholder="Select a host" className="text-[#2A4759]" />
+                  <Label htmlFor="db-connection-select" className="text-[#F79B72]">Select Database Connection</Label>
+                  <Select value={selectedConnection} onValueChange={setSelectedConnection}>
+                    <SelectTrigger id="db-connection-select" className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]">
+                      <SelectValue placeholder="Select a connection" className="text-[#2A4759]" />
                     </SelectTrigger>
                     <SelectContent className="bg-[#DDDDDD] border-[#2A4759] text-[#2A4759]">
-                      {vms.map((vm: any) => (
-                        <SelectItem key={vm.name} value={vm.ip} className="text-[#2A4759]">
-                          {vm.name} ({vm.ip})
+                      {dbConnections.map((conn: DbConnection) => (
+                        <SelectItem key={conn.hostname} value={conn.hostname} className="text-[#2A4759]">
+                          {conn.hostname} ({conn.ip}:{conn.port})
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -375,7 +465,7 @@ const SqlOperations = () => {
                       <SelectValue placeholder="Select a database user" className="text-[#2A4759]" />
                     </SelectTrigger>
                     <SelectContent className="bg-[#DDDDDD] border-[#2A4759] text-[#2A4759]">
-                      {dbUsers.map((user: string) => (
+                      {(customHost || !selectedConnection ? dbUsers : availableDbUsers).map((user: string) => (
                         <SelectItem key={user} value={user} className="text-[#2A4759]">{user}</SelectItem>
                       ))}
                     </SelectContent>
@@ -398,15 +488,22 @@ const SqlOperations = () => {
             <Button 
               onClick={handleDeploy} 
               className="bg-[#F79B72] text-[#2A4759] hover:bg-[#F79B72]/80"
-              disabled={sqlDeployMutation.isPending}
+              disabled={sqlDeployMutation.isPending || operationStatus === 'running' || operationStatus === 'loading'}
             >
-              {sqlDeployMutation.isPending ? "Deploying..." : "Deploy SQL"}
+              {sqlDeployMutation.isPending || operationStatus === 'running' || operationStatus === 'loading' ? 
+                "Deploying..." : "Deploy SQL"}
             </Button>
           </div>
         </div>
 
         <div className="h-full">
-          <LogDisplay logs={logs} height="400px" title="SQL Deployment Logs" fixAutoScroll={true} />
+          <LogDisplay 
+            logs={logs} 
+            height="400px" 
+            title="SQL Deployment Logs" 
+            fixAutoScroll={true} 
+            status={operationStatus}
+          />
         </div>
       </div>
     </div>

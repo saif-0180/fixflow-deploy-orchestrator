@@ -3,13 +3,16 @@ import React, { useRef, useEffect, useState } from 'react';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Loader2 } from "lucide-react";
 
 interface LogDisplayProps {
   logs: string[];
   height?: string;
   fixedHeight?: boolean;
   title?: string;
-  fixAutoScroll?: boolean; // New prop to control auto-scrolling behavior
+  fixAutoScroll?: boolean;
+  status?: 'idle' | 'loading' | 'running' | 'success' | 'failed' | 'completed';
 }
 
 const LogDisplay: React.FC<LogDisplayProps> = ({ 
@@ -17,7 +20,8 @@ const LogDisplay: React.FC<LogDisplayProps> = ({
   height = "400px", 
   fixedHeight = true,
   title = "Logs",
-  fixAutoScroll = false
+  fixAutoScroll = false,
+  status = 'idle'
 }) => {
   const logEndRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState<boolean>(true);
@@ -31,10 +35,41 @@ const LogDisplay: React.FC<LogDisplayProps> = ({
     }
   }, [logs, autoScroll, previousLogsLength]);
 
+  // Get badge color based on status
+  const getBadgeColorClass = () => {
+    switch (status) {
+      case 'success':
+      case 'completed':
+        return 'bg-green-500 hover:bg-green-600';
+      case 'failed':
+        return 'bg-red-500 hover:bg-red-600';
+      case 'running':
+        return 'bg-yellow-500 hover:bg-yellow-600';
+      case 'loading':
+        return 'bg-blue-500 hover:bg-blue-600';
+      default:
+        return 'bg-gray-500 hover:bg-gray-600';
+    }
+  };
+
   return (
     <div className="space-y-2 h-full">
       <div className="flex items-center justify-between">
-        <h3 className="font-medium text-[#F79B72]">{title}</h3>
+        <div className="flex items-center gap-2">
+          <h3 className="font-medium text-[#F79B72]">{title}</h3>
+          {status !== 'idle' && (
+            <Badge className={`${getBadgeColorClass()} text-white`}>
+              {status === 'running' || status === 'loading' ? (
+                <div className="flex items-center gap-1">
+                  <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                  {status === 'loading' ? 'Loading' : 'Running'}
+                </div>
+              ) : (
+                status.charAt(0).toUpperCase() + status.slice(1)
+              )}
+            </Badge>
+          )}
+        </div>
         {!fixAutoScroll && (
           <div className="flex items-center space-x-2">
             <Label htmlFor="auto-scroll" className="text-sm text-gray-400">Auto-scroll</Label>

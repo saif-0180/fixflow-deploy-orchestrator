@@ -7,5 +7,19 @@
   ],
   "users": ["infadm", "abpwrk1"],
   "db_users": ["postgres", "dbadmin"],
+  "db_connections": [
+    {
+      "hostname": "batch1-db", 
+      "ip": "52.90.129.147", 
+      "port": "5432", 
+      "users": ["postgres", "dbadmin"]
+    },
+    {
+      "hostname": "airflow-db", 
+      "ip": "44.204.30.65", 
+      "port": "5432", 
+      "users": ["postgres"]
+    }
+  ],
   "systemd_services": ["docker.service", "kafka", "zookeeper"]
 }

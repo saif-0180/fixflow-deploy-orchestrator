@@ -7,7 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import LogDisplay from '@/components/LogDisplay';
-import { Loader2 } from 'lucide-react';
+import { Loader2, RefreshCw } from 'lucide-react';
 
 interface Deployment {
   id: string;
@@ -29,9 +29,16 @@ const DeploymentHistory: React.FC = () => {
   const [selectedDeploymentId, setSelectedDeploymentId] = useState<string | null>(null);
   const [deploymentLogs, setDeploymentLogs] = useState<string[]>([]);
   const [clearDays, setClearDays] = useState<number>(30);
+  const [logStatus, setLogStatus] = useState<'idle' | 'loading' | 'running' | 'success' | 'failed' | 'completed'>('idle');
   
-  // Fetch deployment history with reduced polling frequency
-  const { data: deployments = [], refetch: refetchDeployments, isLoading: isLoadingDeployments } = useQuery({
+  // Fetch deployment history with NO automatic refetching
+  const { 
+    data: deployments = [], 
+    refetch: refetchDeployments, 
+    isLoading: isLoadingDeployments,
+    isError: isErrorDeployments,
+    error: deploymentsError
+  } = useQuery({
     queryKey: ['deployment-history'],
     queryFn: async () => {
       try {
@@ -53,11 +60,13 @@ const DeploymentHistory: React.FC = () => {
     staleTime: 1800000, // 30 minutes - consider data fresh for 30 minutes
     refetchInterval: 0, // Disable automatic refetching
     refetchOnWindowFocus: false, // Don't refetch on window focus
+    retry: 1, // Only retry once
   });
 
   // Function to fetch logs for a specific deployment
   const fetchDeploymentLogs = async (deploymentId: string) => {
     try {
+      setLogStatus('loading');
       console.log(`Fetching logs for deployment ${deploymentId}`);
       const response = await fetch(`/api/deploy/${deploymentId}/logs`);
       if (!response.ok) {
@@ -68,21 +77,25 @@ const DeploymentHistory: React.FC = () => {
       
       if (data.logs && data.logs.length > 0) {
         setDeploymentLogs(data.logs);
+        setLogStatus(data.status === 'running' ? 'running' : 'success');
         return data.logs;
       } else {
         // If no logs in response, check if the selected deployment has logs
         const selectedDeployment = deployments.find(d => d.id === deploymentId);
         if (selectedDeployment?.logs && selectedDeployment.logs.length > 0) {
           setDeploymentLogs(selectedDeployment.logs);
+          setLogStatus(selectedDeployment.status === 'running' ? 'running' : 'success');
           return selectedDeployment.logs;
         } else {
           setDeploymentLogs(["No logs available for this deployment"]);
+          setLogStatus('completed');
           return ["No logs available for this deployment"];
         }
       }
     } catch (error) {
       console.error('Error fetching logs:', error);
       setDeploymentLogs(["Error loading logs. Please try again."]);
+      setLogStatus('failed');
       toast({
         title: "Error",
         description: "Failed to fetch logs for this deployment",
@@ -96,6 +109,8 @@ const DeploymentHistory: React.FC = () => {
   useEffect(() => {
     if (selectedDeploymentId) {
       fetchDeploymentLogs(selectedDeploymentId);
+    } else {
+      setLogStatus('idle');
     }
   }, [selectedDeploymentId]);
 
@@ -175,7 +190,7 @@ const DeploymentHistory: React.FC = () => {
 
   // Auto-select the first deployment when list loads and none is selected
   useEffect(() => {
-    if (deployments.length > 0 && !selectedDeploymentId) {
+    if (deployments && deployments.length > 0 && !selectedDeploymentId) {
       setSelectedDeploymentId(deployments[0].id);
     }
   }, [deployments, selectedDeploymentId]);
@@ -226,7 +241,7 @@ const DeploymentHistory: React.FC = () => {
 
   // Get deployment details safely with a fallback
   const getSelectedDeployment = (): Deployment | undefined => {
-    if (!selectedDeploymentId) return undefined;
+    if (!selectedDeploymentId || !deployments) return undefined;
     return deployments.find(d => d.id === selectedDeploymentId);
   };
 
@@ -246,13 +261,34 @@ const DeploymentHistory: React.FC = () => {
         <div className="space-y-4">
           <Card className="bg-[#EEEEEE]">
             <CardHeader className="pb-2">
-              <CardTitle className="text-[#F79B72] text-lg">Recent Deployments</CardTitle>
+              <div className="flex justify-between items-center">
+                <CardTitle className="text-[#F79B72] text-lg">Recent Deployments</CardTitle>
+                <Button
+                  type="button"
+                  onClick={() => refetchDeployments()}
+                  className="bg-[#2A4759] text-white hover:bg-[#2A4759]/80 h-8 w-8 p-0"
+                  title="Refresh"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               <div className="h-[400px] overflow-y-auto">
                 {isLoadingDeployments ? (
                   <div className="flex items-center justify-center h-full">
                     <Loader2 className="h-8 w-8 animate-spin text-[#F79B72]" />
+                  </div>
+                ) : isErrorDeployments ? (
+                  <div className="flex flex-col items-center justify-center h-full space-y-4">
+                    <p className="text-red-500 italic">
+                      Error loading deployment history: {
+                        deploymentsError instanceof Error ? deploymentsError.message : "Unknown error"
+                      }
+                    </p>
+                    <Button onClick={() => refetchDeployments()} className="bg-[#F79B72] text-[#2A4759]">
+                      Try Again
+                    </Button>
                   </div>
                 ) : (
                   <div className="space-y-2">
@@ -297,13 +333,6 @@ const DeploymentHistory: React.FC = () => {
                 >
                   {clearLogsMutation.isPending ? "Clearing..." : "Clear Logs"}
                 </Button>
-                <Button
-                  type="button"
-                  onClick={() => refetchDeployments()}
-                  className="bg-[#2A4759] text-white hover:bg-[#2A4759]/80 ml-auto"
-                >
-                  Refresh
-                </Button>
               </form>
             </CardContent>
           </Card>
@@ -315,14 +344,15 @@ const DeploymentHistory: React.FC = () => {
             logs={deploymentLogs} 
             height="400px" 
             title={`Deployment Details - ${getDeploymentSummary()}`}
-            fixAutoScroll={true} // New prop to control auto scrolling
+            fixAutoScroll={true}
+            status={logStatus}
           />
           
           {selectedDeploymentId && getSelectedDeployment()?.type === 'file' && 
            getSelectedDeployment()?.status === 'success' && (
             <div className="flex justify-end">
               <Button 
-                onClick={() => handleRollback(selectedDeploymentId)}
+                onClick={() => selectedDeploymentId && handleRollback(selectedDeploymentId)}
                 disabled={rollbackMutation.isPending}
                 className="bg-[#2A4759] text-white hover:bg-[#2A4759]/80"
               >

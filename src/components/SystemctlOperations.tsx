@@ -20,6 +20,7 @@ const SystemctlOperations = () => {
   const [selectedOperation, setSelectedOperation] = useState<string>("status");
   const [logs, setLogs] = useState<string[]>([]);
   const [deploymentId, setDeploymentId] = useState<string | null>(null);
+  const [operationStatus, setOperationStatus] = useState<'idle' | 'loading' | 'running' | 'success' | 'failed' | 'completed'>('idle');
 
   // Fetch systemd services
   const { data: services = [] } = useQuery({
@@ -42,6 +43,7 @@ const SystemctlOperations = () => {
   const systemctlMutation = useMutation({
     mutationFn: async () => {
       console.log(`Executing systemctl operation. Operation: ${selectedOperation}, Service: ${selectedService}`);
+      setOperationStatus('loading');
       
       const response = await fetch(`/api/systemd/${selectedOperation}`, {
         method: 'POST',
@@ -62,6 +64,7 @@ const SystemctlOperations = () => {
       
       const data = await response.json();
       setDeploymentId(data.deploymentId);
+      setOperationStatus('running');
       return data;
     },
     onSuccess: () => {
@@ -71,6 +74,7 @@ const SystemctlOperations = () => {
       });
     },
     onError: (error) => {
+      setOperationStatus('failed');
       toast({
         title: "Systemctl Operation Failed",
         description: error instanceof Error ? error.message : "Failed to execute systemctl operation",
@@ -79,9 +83,13 @@ const SystemctlOperations = () => {
     },
   });
 
-  // Fetch log updates with reduced polling frequency
+  // Fetch log updates with improved completion detection
   useEffect(() => {
     if (!deploymentId) return;
+
+    let pollingInterval: number | null = null;
+    let consecutiveSameLogCount = 0;
+    let previousLogLength = 0;
 
     // Initial logs fetch
     const fetchLogs = async () => {
@@ -92,18 +100,67 @@ const SystemctlOperations = () => {
           if (data && data.logs) {
             setLogs(data.logs);
             
-            // If not complete, schedule another fetch, but with longer interval
-            if (data.status !== 'completed' && data.status !== 'failed') {
-              setTimeout(fetchLogs, 3000); // Poll every 3 seconds
+            // Check if status is explicitly completed or failed
+            if (data.status === 'completed' || data.status === 'success') {
+              setOperationStatus('success');
+              if (pollingInterval) clearTimeout(pollingInterval);
+              return;
             }
+            
+            if (data.status === 'failed') {
+              setOperationStatus('failed');
+              if (pollingInterval) clearTimeout(pollingInterval);
+              return;
+            }
+            
+            // Check for implicit completion by checking if logs haven't changed for a while
+            if (data.logs.length === previousLogLength) {
+              consecutiveSameLogCount++;
+              // If logs haven't changed for 3 consecutive checks, consider it completed
+              if (consecutiveSameLogCount >= 3) {
+                console.log("Operation appears to be complete (logs unchanged)");
+                setOperationStatus('success');
+                if (pollingInterval) clearTimeout(pollingInterval);
+                return;
+              }
+            } else {
+              consecutiveSameLogCount = 0;
+              previousLogLength = data.logs.length;
+            }
+            
+            // If not complete, schedule another fetch
+            pollingInterval = window.setTimeout(fetchLogs, 3000); // Poll every 3 seconds
+          }
+        } else {
+          console.error("Failed to fetch logs:", await response.text());
+          // If we can't get logs after a few tries, stop polling
+          consecutiveSameLogCount++;
+          if (consecutiveSameLogCount >= 3) {
+            setOperationStatus('failed');
+            if (pollingInterval) clearTimeout(pollingInterval);
+          } else {
+            pollingInterval = window.setTimeout(fetchLogs, 3000);
           }
         }
       } catch (error) {
         console.error("Error fetching logs:", error);
+        // Error handling - still try a few times
+        consecutiveSameLogCount++;
+        if (consecutiveSameLogCount >= 3) {
+          setOperationStatus('failed');
+          if (pollingInterval) clearTimeout(pollingInterval);
+        } else {
+          pollingInterval = window.setTimeout(fetchLogs, 3000);
+        }
       }
     };
     
     fetchLogs();
+    
+    // Cleanup timeout on component unmount
+    return () => {
+      if (pollingInterval) clearTimeout(pollingInterval);
+    };
   }, [deploymentId]);
 
   const handleExecute = () => {
@@ -126,6 +183,7 @@ const SystemctlOperations = () => {
     }
 
     setLogs([]);
+    setOperationStatus('idle');
     systemctlMutation.mutate();
   };
 
@@ -172,14 +230,21 @@ const SystemctlOperations = () => {
           <Button 
             onClick={handleExecute} 
             className="bg-[#F79B72] text-[#2A4759] hover:bg-[#F79B72]/80"
-            disabled={systemctlMutation.isPending}
+            disabled={systemctlMutation.isPending || operationStatus === 'running' || operationStatus === 'loading'}
           >
-            {systemctlMutation.isPending ? "Executing..." : "Execute Operation"}
+            {systemctlMutation.isPending || operationStatus === 'running' || operationStatus === 'loading' ? 
+              "Executing..." : "Execute Operation"}
           </Button>
         </div>
 
         <div className="h-full">
-          <LogDisplay logs={logs} height="400px" title="Systemctl Operation Logs" fixAutoScroll={true} />
+          <LogDisplay 
+            logs={logs} 
+            height="400px" 
+            title="Systemctl Operation Logs" 
+            fixAutoScroll={true}
+            status={operationStatus} 
+          />
         </div>
       </div>
     </div>
