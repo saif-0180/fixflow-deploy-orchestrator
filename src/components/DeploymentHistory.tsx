@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -79,13 +78,13 @@ const DeploymentHistory: React.FC = () => {
       
       if (data.logs && data.logs.length > 0) {
         setDeploymentLogs(data.logs);
-        setLogStatus(data.status === 'running' ? 'running' : 'success');
+        setLogStatus(data.status === 'running' ? 'running' : 'completed');
       } else {
         // If no logs in response, check if the selected deployment has logs
         const selectedDeployment = deployments.find(d => d.id === deploymentId);
         if (selectedDeployment?.logs && selectedDeployment.logs.length > 0) {
           setDeploymentLogs(selectedDeployment.logs);
-          setLogStatus(selectedDeployment.status === 'running' ? 'running' : 'success');
+          setLogStatus(selectedDeployment.status === 'running' ? 'running' : 'completed');
         } else {
           setDeploymentLogs([`No detailed logs available for deployment ${deploymentId}`]);
           setLogStatus('completed');

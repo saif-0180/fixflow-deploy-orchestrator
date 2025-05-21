@@ -23,15 +23,26 @@ const VMSelector: React.FC<VMSelectorProps> = ({
     queryKey: ['vms'],
     queryFn: async () => {
       try {
-        const response = await fetch('/api/vms');
+        const response = await fetch('/inventory/inventory.json');
         if (!response.ok) {
-          console.error('Error fetching VMs:', await response.text());
-          throw new Error('Failed to fetch VMs');
+          console.error('Error fetching VMs from inventory:', await response.text());
+          throw new Error('Failed to fetch VMs from inventory');
         }
-        return response.json();
+        const data = await response.json();
+        return data.vms || [];
       } catch (error) {
         console.error('Error fetching VMs:', error);
-        throw error;
+        // Fallback to API if inventory fetch fails
+        try {
+          const apiResponse = await fetch('/api/vms');
+          if (!apiResponse.ok) {
+            throw new Error('Failed to fetch VMs from API');
+          }
+          return await apiResponse.json();
+        } catch (apiError) {
+          console.error('Error in API fallback:', apiError);
+          return [];
+        }
       }
     },
     refetchOnWindowFocus: false,

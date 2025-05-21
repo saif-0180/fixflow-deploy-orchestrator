@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -67,7 +66,7 @@ const SqlOperations = () => {
     refetchOnWindowFocus: false,
   });
 
-  // Fetch DB connections from db_inventory
+  // Fetch DB connections from db_inventory.json
   const { data: dbConnections = [] } = useQuery({
     queryKey: ['db-connections'],
     queryFn: async () => {
