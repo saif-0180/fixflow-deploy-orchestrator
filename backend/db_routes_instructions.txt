@@ -1,0 +1,14 @@
+
+Add this to app.py:
+
+1. Import the db_routes Blueprint:
+```python
+from routes.db_routes import db_routes
+```
+
+2. Register the Blueprint:
+```python
+app.register_blueprint(db_routes)
+```
+
+Make sure to place these after the other imports and registrations in app.py.
