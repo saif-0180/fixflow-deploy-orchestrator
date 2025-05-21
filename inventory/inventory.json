@@ -1,10 +1,10 @@
 
 {
   "vms": [
-    {"name": "batch1", "type": "batch", "ip": "3.89.225.47"},
-    {"name": "airflow", "type": "airflow", "ip": "3.88.40.38"},
-    {"name": "imdg1", "type": "imdg", "ip": "3.95.132.1"}
+    {"name": "batch1", "type": "batch", "ip": "3.80.79.110"},
+    {"name": "airflow", "type": "airflow", "ip": "3.95.164.32"},
+    {"name": "imdg2", "type": "imdg", "ip": "44.203.114.237"}
   ],
   "users": ["infadm", "abpwrk1", "root"],
-  "systemd_services": ["docker.service", "kafka", "zookeeper"]
+  "systemd_services": ["docker.service", "postgres.service", "zookeeper"]
 }
