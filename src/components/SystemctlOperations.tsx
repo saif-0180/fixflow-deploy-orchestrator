@@ -1,116 +1,118 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { 
-  Select, 
-  SelectContent, 
-  SelectItem, 
-  SelectTrigger, 
-  SelectValue 
-} from "@/components/ui/select";
-import VMSelector from '@/components/VMSelector';
-import LogDisplay from '@/components/LogDisplay';
+import VMSelector from './VMSelector';
+import LogDisplay from './LogDisplay';
+import { useQuery } from '@tanstack/react-query';
 
 const SystemctlOperations = () => {
   const { toast } = useToast();
-  const [selectedService, setSelectedService] = useState<string>("");
   const [selectedVMs, setSelectedVMs] = useState<string[]>([]);
-  const [selectedOperation, setSelectedOperation] = useState<string>("status");
+  const [selectedService, setSelectedService] = useState<string>('');
+  const [operation, setOperation] = useState<string>('status');
   const [logs, setLogs] = useState<string[]>([]);
   const [deploymentId, setDeploymentId] = useState<string | null>(null);
-  const [operationStatus, setOperationStatus] = useState<'idle' | 'loading' | 'running' | 'success' | 'failed' | 'completed'>('idle');
+  const [status, setStatus] = useState<'idle' | 'loading' | 'running' | 'success' | 'failed'>('idle');
 
   // Fetch systemd services
-  const { data: services = [] } = useQuery({
+  const { data: services = [], isLoading: isLoadingServices } = useQuery({
     queryKey: ['systemd-services'],
     queryFn: async () => {
-      try {
-        // First try to fetch from inventory directly
-        const response = await fetch('/inventory/inventory.json');
-        if (!response.ok) {
-          throw new Error('Failed to fetch inventory.json');
-        }
-        const data = await response.json();
-        return data.systemd_services || [];
-      } catch (error) {
-        console.error('Error fetching from inventory:', error);
-        // Fallback to API
-        try {
-          const apiResponse = await fetch('/api/systemd/services');
-          if (!apiResponse.ok) {
-            throw new Error('Failed to fetch systemd services from API');
-          }
-          return await apiResponse.json();
-        } catch (apiError) {
-          console.error('Error fetching from API:', apiError);
-          return ['docker.service', 'kafka', 'zookeeper'];
-        }
+      const response = await fetch('/api/systemd/services');
+      if (!response.ok) {
+        throw new Error('Failed to fetch systemd services');
       }
-    }
+      return response.json();
+    },
+    refetchOnWindowFocus: false,
   });
 
-  // Handle VM selection changes
-  const handleVMSelectionChange = (vms: string[]) => {
-    setSelectedVMs(vms);
-  };
-
-  // Systemctl operation mutation
+  // Execute systemctl operation
   const systemctlMutation = useMutation({
     mutationFn: async () => {
-      console.log(`Executing systemctl operation. Operation: ${selectedOperation}, Service: ${selectedService}`);
-      setOperationStatus('loading');
-      
-      const response = await fetch(`/api/systemd/${selectedOperation}`, {
+      if (!selectedService || selectedVMs.length === 0) {
+        throw new Error('Please select a service and at least one VM');
+      }
+
+      const response = await fetch(`/api/systemd/${operation}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          operation: selectedOperation,
           service: selectedService,
-          vms: selectedVMs
+          vms: selectedVMs,
+          operation
         }),
       });
-      
+
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Failed to execute systemctl operation: ${errorText}`);
+        throw new Error(errorText || 'Failed to execute systemctl operation');
       }
-      
-      const data = await response.json();
-      setDeploymentId(data.deploymentId);
-      setOperationStatus('running');
-      return data;
+
+      return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast({
         title: "Systemctl Operation Started",
-        description: `Systemctl ${selectedOperation} operation has been initiated.`,
+        description: `Service: ${selectedService}, Operation: ${operation}`,
       });
-      
-      // Poll for logs immediately
-      setTimeout(() => {
-        if (deploymentId) {
-          fetchLogs(deploymentId);
-        }
-      }, 1000);
+      setDeploymentId(data.deploymentId);
+      setStatus('running');
+      pollLogs(data.deploymentId);
     },
     onError: (error) => {
-      setOperationStatus('failed');
       toast({
-        title: "Systemctl Operation Failed",
-        description: error instanceof Error ? error.message : "Failed to execute systemctl operation",
+        title: "Error",
+        description: error instanceof Error ? error.message : 'Failed to execute systemctl operation',
         variant: "destructive",
       });
     },
   });
 
-  // Fetch logs for a deployment
+  // Poll for operation logs
+  const pollLogs = async (id: string) => {
+    try {
+      setStatus('loading');
+      // Set up SSE for real-time logs
+      const evtSource = new EventSource(`/api/deploy/${id}/logs`);
+      
+      evtSource.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        
+        if (data.message) {
+          setLogs(prev => [...prev, data.message]);
+        }
+        
+        if (data.status && data.status !== 'running') {
+          setStatus(data.status);
+          evtSource.close();
+        }
+      };
+      
+      evtSource.onerror = () => {
+        evtSource.close();
+        // Fallback to normal polling if SSE fails
+        fetchLogs(id);
+      };
+      
+      return () => {
+        evtSource.close();
+      };
+    } catch (error) {
+      console.error('Error setting up log polling:', error);
+      // Fallback to regular polling
+      fetchLogs(id);
+    }
+  };
+  
   const fetchLogs = async (id: string) => {
-    if (!id) return;
-    
     try {
       const response = await fetch(`/api/deploy/${id}/logs`);
       if (!response.ok) {
@@ -118,124 +120,110 @@ const SystemctlOperations = () => {
       }
       
       const data = await response.json();
-      if (data && data.logs) {
-        // Only show relevant logs for systemctl operations
-        const relevantLogs = data.logs.filter((log: string) => 
-          !log.includes('PLAY RECAP') && 
-          !log.includes('TASK [Gathering Facts]') && 
-          !log.includes('PLAY [Run systemd commands]') &&
-          !log.includes('ok=')
-        );
-        
-        setLogs(relevantLogs);
-        
-        // Update status based on response
-        if (data.status === 'completed' || data.status === 'success') {
-          setOperationStatus('success');
-        } else if (data.status === 'failed') {
-          setOperationStatus('failed');
-        } else if (data.status === 'running') {
-          // If still running, schedule another check
-          setTimeout(() => fetchLogs(id), 2000);
-        }
+      
+      if (data.logs) {
+        // Filter out logs that are too noisy for systemctl operations
+        const filteredLogs = data.logs.filter((log: string) => {
+          // Skip certain noisy logs that don't add value
+          return !log.includes('TASK [Check if service exists]') &&
+                 !log.includes('ok: [') &&
+                 !log.includes('PLAY [Systemd') &&
+                 !log.includes('TASK [Gathering Facts]') &&
+                 !log.includes('META:') &&
+                 !log.includes('skipping:');
+        });
+        setLogs(filteredLogs);
+      }
+      
+      if (data.status) {
+        setStatus(data.status);
+      }
+      
+      // Continue polling if still running
+      if (data.status === 'running') {
+        setTimeout(() => fetchLogs(id), 2000);
       }
     } catch (error) {
       console.error('Error fetching logs:', error);
-      setOperationStatus('failed');
+      setStatus('failed');
     }
   };
 
-  // Start fetching logs when deploymentId is available
-  useEffect(() => {
-    if (deploymentId) {
-      fetchLogs(deploymentId);
-    }
-  }, [deploymentId]);
-
-  const handleExecute = () => {
-    if (!selectedService) {
-      toast({
-        title: "Validation Error",
-        description: "Please select a service.",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    if (selectedVMs.length === 0) {
-      toast({
-        title: "Validation Error",
-        description: "Please select at least one VM.",
-        variant: "destructive",
-      });
-      return;
-    }
-
+  // Handle form submission
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
     setLogs([]);
-    setOperationStatus('idle');
     systemctlMutation.mutate();
   };
 
   return (
-    <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-[#F79B72] mb-4">Systemctl Operations</h2>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="space-y-4">
-          <div>
-            <label htmlFor="service-select" className="block text-[#F79B72] mb-2">Select Service</label>
-            <Select value={selectedService} onValueChange={setSelectedService}>
-              <SelectTrigger id="service-select" className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]">
-                <SelectValue placeholder="Select a service" className="text-[#2A4759]" />
-              </SelectTrigger>
-              <SelectContent className="bg-[#DDDDDD] border-[#2A4759] text-[#2A4759]">
-                {services.map((service: string) => (
-                  <SelectItem key={service} value={service} className="text-[#2A4759]">{service}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div>
-            <label htmlFor="operation-select" className="block text-[#F79B72] mb-2">Select Operation</label>
-            <Select value={selectedOperation} onValueChange={setSelectedOperation}>
-              <SelectTrigger id="operation-select" className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]">
-                <SelectValue placeholder="Select an operation" className="text-[#2A4759]" />
-              </SelectTrigger>
-              <SelectContent className="bg-[#DDDDDD] border-[#2A4759] text-[#2A4759]">
-                <SelectItem value="status" className="text-[#2A4759]">Status</SelectItem>
-                <SelectItem value="start" className="text-[#2A4759]">Start</SelectItem>
-                <SelectItem value="stop" className="text-[#2A4759]">Stop</SelectItem>
-                <SelectItem value="restart" className="text-[#2A4759]">Restart</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          
-          <div>
-            <label className="block text-[#F79B72] mb-2">Select VMs</label>
-            <VMSelector onSelectionChange={handleVMSelectionChange} />
-          </div>
-
-          <Button 
-            onClick={handleExecute} 
-            className="bg-[#F79B72] text-[#2A4759] hover:bg-[#F79B72]/80"
-            disabled={systemctlMutation.isPending || operationStatus === 'running' || operationStatus === 'loading'}
-          >
-            {systemctlMutation.isPending || operationStatus === 'running' || operationStatus === 'loading' ? 
-              "Executing..." : "Execute Operation"}
-          </Button>
-        </div>
-
-        <div className="h-full">
-          <LogDisplay 
-            logs={logs} 
-            height="400px" 
-            title="Systemctl Operation Logs" 
-            fixAutoScroll={true}
-            status={operationStatus} 
-          />
-        </div>
-      </div>
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <Card className="bg-[#1a2b42] text-[#EEEEEE]">
+        <CardHeader>
+          <CardTitle>Systemctl Operations</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <Label htmlFor="systemd-service">Service</Label>
+              <Select 
+                onValueChange={setSelectedService}
+                disabled={isLoadingServices || services.length === 0}
+              >
+                <SelectTrigger id="systemd-service">
+                  <SelectValue placeholder="Select service" />
+                </SelectTrigger>
+                <SelectContent>
+                  {services.map((service: string) => (
+                    <SelectItem key={service} value={service}>{service}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div>
+              <Label htmlFor="systemd-operation">Operation</Label>
+              <Select 
+                onValueChange={setOperation}
+                defaultValue="status"
+              >
+                <SelectTrigger id="systemd-operation">
+                  <SelectValue placeholder="Select operation" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="status">Status</SelectItem>
+                  <SelectItem value="start">Start</SelectItem>
+                  <SelectItem value="stop">Stop</SelectItem>
+                  <SelectItem value="restart">Restart</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div>
+              <Label>Target VMs</Label>
+              <VMSelector 
+                onSelectionChange={setSelectedVMs}
+                selectedVMs={selectedVMs}
+              />
+            </div>
+            
+            <Button 
+              type="submit" 
+              disabled={!selectedService || selectedVMs.length === 0 || systemctlMutation.isPending}
+              className="w-full"
+            >
+              {systemctlMutation.isPending ? 'Executing...' : 'Execute Systemctl Operation'}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+      
+      <LogDisplay 
+        logs={logs} 
+        title="Systemctl Operation Logs" 
+        height="400px"
+        status={status}
+      />
     </div>
   );
 };

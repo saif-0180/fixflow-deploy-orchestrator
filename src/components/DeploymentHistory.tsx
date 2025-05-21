@@ -103,7 +103,7 @@ const DeploymentHistory: React.FC = () => {
     }
   };
 
-  // Effect to load logs when a deployment is selected and poll every 5 seconds if running
+  // Effect to load logs when a deployment is selected
   useEffect(() => {
     if (!selectedDeploymentId) {
       setLogStatus('idle');
@@ -111,23 +111,7 @@ const DeploymentHistory: React.FC = () => {
     }
     
     fetchDeploymentLogs(selectedDeploymentId);
-    
-    // If status is running, poll for updates every 5 seconds
-    let intervalId: number | null = null;
-    
-    if (logStatus === 'running') {
-      intervalId = window.setInterval(() => {
-        console.log("Polling for log updates...");
-        fetchDeploymentLogs(selectedDeploymentId);
-      }, 5000) as unknown as number;
-    }
-    
-    return () => {
-      if (intervalId !== null) {
-        window.clearInterval(intervalId);
-      }
-    };
-  }, [selectedDeploymentId, logStatus]);
+  }, [selectedDeploymentId]);
 
   // Manual refresh function
   const handleRefresh = () => {
@@ -227,15 +211,15 @@ const DeploymentHistory: React.FC = () => {
 
     switch (deployment.type) {
       case 'file':
-        return `FT=${deployment.ft || 'N/A'}, Status=${deployment.status}, VMs=${deployment.vms?.join(', ') || 'N/A'}, ${dateTime}`;
+        return `FT=${deployment.ft || 'N/A'}, File=${deployment.file || 'N/A'}, Status=${deployment.status}, ${dateTime}`;
       case 'sql':
         return `SQL: ${deployment.ft || 'N/A'}/${deployment.file || 'N/A'}, Status=${deployment.status}, ${dateTime}`;
       case 'systemd':
-        return `Service ${deployment.operation || 'N/A'} ${deployment.service || 'N/A'}, VMs=${deployment.vms?.join(', ') || 'N/A'}, ${dateTime}`;
+        return `Service ${deployment.operation || 'N/A'} ${deployment.service || 'N/A'}, Status=${deployment.status}, ${dateTime}`;
       case 'command':
-        return `Command: ${deployment.command ? `${deployment.command.substring(0, 30)}${deployment.command.length > 30 ? '...' : ''}` : 'N/A'}, ${dateTime}`;
+        return `Command: ${deployment.command ? `${deployment.command.substring(0, 30)}${deployment.command.length > 30 ? '...' : ''}` : 'N/A'}, Status=${deployment.status}, ${dateTime}`;
       case 'rollback':
-        return `Rollback: ${deployment.ft || 'N/A'}/${deployment.file || 'N/A'}, ${dateTime}`;
+        return `Rollback: ${deployment.ft || 'N/A'}/${deployment.file || 'N/A'}, Status=${deployment.status}, ${dateTime}`;
       default:
         return `${deployment.type} (${deployment.status}), ${dateTime}`;
     }
