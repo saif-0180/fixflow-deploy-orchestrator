@@ -17,18 +17,19 @@ const VMSelector: React.FC<VMSelectorProps> = ({
 }) => {
   const [selectedVMList, setSelectedVMList] = useState<string[]>(selectedVMs);
 
-  // Fetch VMs from inventory
+  // Fetch VMs from API instead of local inventory file
   const { data: vmsData = [], isLoading } = useQuery({
     queryKey: ['vms'],
     queryFn: async () => {
       try {
-        const response = await fetch('/inventory/inventory.json');
+        const response = await fetch('/api/vms');
         if (!response.ok) {
-          console.error('Error fetching VMs from inventory:', await response.text());
-          throw new Error('Failed to fetch VMs from inventory');
+          console.error('Error fetching VMs:', await response.text());
+          throw new Error('Failed to fetch VMs');
         }
         const data = await response.json();
-        return data.vms || [];
+        console.log('Loaded VMs from API:', data);
+        return data || [];
       } catch (error) {
         console.error('Error fetching VMs:', error);
         return []; // Return empty array on error
@@ -37,9 +38,11 @@ const VMSelector: React.FC<VMSelectorProps> = ({
     refetchOnWindowFocus: false,
   });
 
-  // Update selected VMs state when prop changes
+  // Only update selectedVMs when the prop changes, not on every render
   useEffect(() => {
-    setSelectedVMList(selectedVMs);
+    if (JSON.stringify(selectedVMs) !== JSON.stringify(selectedVMList)) {
+      setSelectedVMList(selectedVMs);
+    }
   }, [selectedVMs]);
 
   // Handle checkbox changes
