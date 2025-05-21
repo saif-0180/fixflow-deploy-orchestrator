@@ -22,40 +22,17 @@ const ShellCommandOperations: React.FC = () => {
   const [selectedVMs, setSelectedVMs] = useState<string[]>([]);
   const [logs, setLogs] = useState<string[]>([]);
   const [deploymentId, setDeploymentId] = useState<string | null>(null);
-  const [vms, setVms] = useState<string[]>([]);
   const [useSudo, setUseSudo] = useState<boolean>(false);
   const [useCustomPath, setUseCustomPath] = useState<boolean>(false);
   const [customPath, setCustomPath] = useState<string>("");
   const [selectedUser, setSelectedUser] = useState<string>("infadm");
   const [users] = useState<string[]>(["infadm", "abpwrk1", "root"]);
-
-  // Fetch VMs on component mount
-  useEffect(() => {
-    const fetchVMs = async () => {
-      try {
-        const response = await fetch('/api/vms');
-        if (!response.ok) {
-          throw new Error('Failed to fetch VMs');
-        }
-        const data = await response.json();
-        const vmNames = data.map((vm: any) => vm.name);
-        setVms(vmNames);
-      } catch (error) {
-        console.error('Error fetching VMs:', error);
-        toast({
-          title: "Error",
-          description: "Failed to fetch VM list",
-          variant: "destructive",
-        });
-      }
-    };
-    
-    fetchVMs();
-  }, [toast]);
+  const [operationStatus, setOperationStatus] = useState<'idle' | 'loading' | 'running' | 'success' | 'failed' | 'completed'>('idle');
 
   // Shell command mutation
   const shellCommandMutation = useMutation({
     mutationFn: async () => {
+      setOperationStatus('loading');
       const response = await fetch('/api/shell/command', {
         method: 'POST',
         headers: {
@@ -77,6 +54,7 @@ const ShellCommandOperations: React.FC = () => {
       
       const data = await response.json();
       setDeploymentId(data.deploymentId);
+      setOperationStatus('running');
       return data;
     },
     onSuccess: (data) => {
@@ -87,6 +65,7 @@ const ShellCommandOperations: React.FC = () => {
       startPollingLogs(data.deploymentId);
     },
     onError: (error) => {
+      setOperationStatus('failed');
       toast({
         title: "Command Failed",
         description: error instanceof Error ? error.message : "Unknown error occurred",
@@ -95,12 +74,16 @@ const ShellCommandOperations: React.FC = () => {
     },
   });
 
-  // Add a function to poll for logs
+  // Add a function to poll for logs with improved completion detection
   const startPollingLogs = (id: string) => {
     if (!id) return;
     
     // Start with a clear log display
     setLogs([]);
+    setOperationStatus('running');
+    
+    let pollCount = 0;
+    let lastLogLength = 0;
     
     // Set up polling interval
     const pollInterval = setInterval(async () => {
@@ -113,15 +96,49 @@ const ShellCommandOperations: React.FC = () => {
         const data = await response.json();
         if (data.logs) {
           setLogs(data.logs);
+          
+          // Check if operation is explicitly complete
+          if (data.status === 'completed' || data.status === 'success') {
+            setOperationStatus('success');
+            clearInterval(pollInterval);
+            return;
+          }
+          
+          if (data.status === 'failed') {
+            setOperationStatus('failed');
+            clearInterval(pollInterval);
+            return;
+          }
+          
+          // Check for implicit completion (logs not changing)
+          if (data.logs.length === lastLogLength) {
+            pollCount++;
+            if (pollCount >= 5) { // After 5 consecutive polls with no changes
+              console.log('Operation appears complete - logs have not changed');
+              setOperationStatus('success');
+              clearInterval(pollInterval);
+              return;
+            }
+          } else {
+            pollCount = 0;
+            lastLogLength = data.logs.length;
+          }
         }
         
-        // Stop polling if operation is complete
-        if (data.status !== 'running' && data.status !== 'pending') {
+        // Stop polling after 2 minutes as a safeguard
+        if (pollCount > 120) {
+          console.log('Operation timed out after 2 minutes');
+          setOperationStatus(data.status === 'running' ? 'running' : 'completed');
           clearInterval(pollInterval);
         }
       } catch (error) {
         console.error('Error fetching logs:', error);
-        clearInterval(pollInterval);
+        // Don't clear interval yet, try a few more times
+        pollCount += 5;
+        if (pollCount > 20) {  // After several failures, give up
+          setOperationStatus('failed');
+          clearInterval(pollInterval);
+        }
       }
     }, 1000); // Poll every second
     
@@ -172,6 +189,10 @@ const ShellCommandOperations: React.FC = () => {
     shellCommandMutation.mutate();
   };
 
+  const handleVMSelectionChange = (vms: string[]) => {
+    setSelectedVMs(vms);
+  };
+
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold text-[#F79B72] mb-4">Shell Command Execution</h2>
@@ -203,12 +224,13 @@ const ShellCommandOperations: React.FC = () => {
             </Select>
           </div>
 
-          <VMSelector 
-            vms={vms} 
-            selectedVMs={selectedVMs} 
-            setSelectedVMs={setSelectedVMs}
-            selectorId="shell-command" 
-          />
+          <div>
+            <Label className="text-[#F79B72]">Select VMs</Label>
+            <VMSelector 
+              onSelectionChange={handleVMSelectionChange}
+              selectedVMs={selectedVMs}
+            />
+          </div>
 
           <div className="space-y-2">
             <div className="flex items-center space-x-2">
@@ -247,14 +269,20 @@ const ShellCommandOperations: React.FC = () => {
             type="button"
             onClick={handleExecute}
             className="bg-[#F79B72] text-[#2A4759] hover:bg-[#F79B72]/80"
-            disabled={shellCommandMutation.isPending}
+            disabled={shellCommandMutation.isPending || operationStatus === 'running' || operationStatus === 'loading'}
           >
-            {shellCommandMutation.isPending ? "Executing..." : "Execute Command"}
+            {shellCommandMutation.isPending || operationStatus === 'running' || operationStatus === 'loading' ? "Executing..." : "Execute Command"}
           </Button>
         </div>
 
         <div>
-          <LogDisplay logs={logs} height="400px" fixedHeight={true} title="Shell Command Logs" />
+          <LogDisplay 
+            logs={logs} 
+            height="400px" 
+            fixedHeight={true} 
+            title="Shell Command Logs" 
+            status={operationStatus}
+          />
         </div>
       </div>
     </div>

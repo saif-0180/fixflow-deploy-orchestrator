@@ -26,34 +26,26 @@ const LogDisplay: React.FC<LogDisplayProps> = ({
   const logEndRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState<boolean>(true);
   const [previousLogsLength, setPreviousLogsLength] = useState<number>(0);
-  const [lastAutoScrollTime, setLastAutoScrollTime] = useState<number>(0);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
-  // More controlled auto-scroll with rate limiting
+  // Auto-scroll to bottom when logs change
   useEffect(() => {
-    // Only auto-scroll if enabled and logs have changed
     if (autoScroll && logEndRef.current && logs.length !== previousLogsLength) {
-      // Rate limit scrolling to prevent excessive scrolling
-      const now = Date.now();
-      if (now - lastAutoScrollTime > 500) { // Only scroll at most twice per second
-        logEndRef.current.scrollIntoView({ behavior: 'smooth' });
-        setLastAutoScrollTime(now);
-      }
-      setPreviousLogsLength(logs.length);
+      setTimeout(() => {
+        logEndRef.current?.scrollIntoView({ behavior: 'auto' });
+        setPreviousLogsLength(logs.length);
+      }, 100);
     }
-  }, [logs, autoScroll, previousLogsLength, lastAutoScrollTime]);
+  }, [logs, autoScroll, previousLogsLength]);
 
-  // Reset scroll position when log content changes significantly
+  // Force scroll when status changes to success/completed
   useEffect(() => {
-    if (Math.abs(logs.length - previousLogsLength) > 5) {
-      // If we've added more than 5 new log entries at once, force a scroll update
-      if (autoScroll && logEndRef.current) {
-        setTimeout(() => {
-          logEndRef.current?.scrollIntoView({ behavior: 'auto' });
-        }, 50);
-      }
+    if ((status === 'success' || status === 'completed') && logEndRef.current) {
+      setTimeout(() => {
+        logEndRef.current?.scrollIntoView({ behavior: 'auto' });
+      }, 200);
     }
-  }, [logs.length, previousLogsLength, autoScroll]);
+  }, [status]);
 
   // Get badge color based on status
   const getBadgeColorClass = () => {
@@ -72,20 +64,31 @@ const LogDisplay: React.FC<LogDisplayProps> = ({
     }
   };
 
+  // Detect if log content contains errors
+  const hasErrors = logs.some(log => 
+    log.includes('ERROR') || 
+    log.includes('FAILED') || 
+    log.includes('failed') ||
+    log.includes('error')
+  );
+
+  // Set appropriate status if there are errors but status isn't set yet
+  const effectiveStatus = hasErrors && status === 'running' ? 'failed' : status;
+
   return (
     <div className="space-y-2 h-full">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <h3 className="font-medium text-[#F79B72]">{title}</h3>
-          {status !== 'idle' && (
+          {effectiveStatus !== 'idle' && (
             <Badge className={`${getBadgeColorClass()} text-white`}>
-              {status === 'running' || status === 'loading' ? (
+              {effectiveStatus === 'running' || effectiveStatus === 'loading' ? (
                 <div className="flex items-center gap-1">
                   <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                  {status === 'loading' ? 'Loading' : 'Running'}
+                  {effectiveStatus === 'loading' ? 'Loading' : 'Running'}
                 </div>
               ) : (
-                status.charAt(0).toUpperCase() + status.slice(1)
+                effectiveStatus.charAt(0).toUpperCase() + effectiveStatus.slice(1)
               )}
             </Badge>
           )}
@@ -115,7 +118,7 @@ const LogDisplay: React.FC<LogDisplayProps> = ({
         ) : (
           logs.map((log, index) => (
             <div key={index} className="mb-1">
-              {log.includes('ERROR') || log.includes('FAILED') || log.includes('failed') ? (
+              {log.includes('ERROR') || log.includes('FAILED') || log.includes('failed') || log.includes('error') ? (
                 <span className="text-red-400">{log}</span>
               ) : log.includes('SUCCESS') || log.includes('COMPLETED') || log.includes('successfully') ? (
                 <span className="text-green-400">{log}</span>
