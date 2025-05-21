@@ -27,9 +27,11 @@ const FileOperations: React.FC = () => {
   const [createBackup, setCreateBackup] = useState<boolean>(true);
   const [fileLogs, setFileLogs] = useState<string[]>([]);
   const [deploymentId, setDeploymentId] = useState<string | null>(null);
-  const [shellCommand, setShellCommand] = useState<string>("");
+  const [validateUseSudo, setValidateUseSudo] = useState<boolean>(false);
+  const [fileOperationStatus, setFileOperationStatus] = useState<'idle' | 'loading' | 'running' | 'success' | 'failed' | 'completed'>('idle');
   
   // Shell command options
+  const [shellCommand, setShellCommand] = useState<string>("");
   const [shellSelectedVMs, setShellSelectedVMs] = useState<string[]>([]);
   const [shellSelectedUser, setShellSelectedUser] = useState<string>("infadm");
   const [shellUseSudo, setShellUseSudo] = useState<boolean>(false);
@@ -37,8 +39,8 @@ const FileOperations: React.FC = () => {
   const [shellWorkingDir, setShellWorkingDir] = useState<string>("");
   const [shellCommandId, setShellCommandId] = useState<string | null>(null);
   const [shellLogs, setShellLogs] = useState<string[]>([]);
-  const [validateUseSudo, setValidateUseSudo] = useState<boolean>(false);
-  const [userHomes, setUserHomes] = useState<{[key: string]: string}>({
+  const [shellOperationStatus, setShellOperationStatus] = useState<'idle' | 'loading' | 'running' | 'success' | 'failed' | 'completed'>('idle');
+  const [userHomes] = useState<{[key: string]: string}>({
     'infadm': '/home/infadm',
     'abpwrk1': '/home/abpwrk1',
     'root': '/root'
@@ -53,7 +55,8 @@ const FileOperations: React.FC = () => {
         throw new Error('Failed to fetch FTs');
       }
       return response.json();
-    }
+    },
+    refetchOnWindowFocus: false,
   });
 
   // Fetch files for selected FT
@@ -68,11 +71,13 @@ const FileOperations: React.FC = () => {
       return response.json();
     },
     enabled: !!selectedFt,
+    refetchOnWindowFocus: false,
   });
 
   // Deploy mutation
   const deployMutation = useMutation({
     mutationFn: async () => {
+      setFileOperationStatus('loading');
       const response = await fetch('/api/deploy/file', {
         method: 'POST',
         headers: {
@@ -95,6 +100,7 @@ const FileOperations: React.FC = () => {
       
       const data = await response.json();
       setDeploymentId(data.deploymentId);
+      setFileOperationStatus('running');
       return data;
     },
     onSuccess: (data) => {
@@ -104,9 +110,10 @@ const FileOperations: React.FC = () => {
       });
       
       // Start polling for logs
-      startPollingLogs(data.deploymentId, setFileLogs);
+      pollLogs(data.deploymentId, setFileLogs, setFileOperationStatus);
     },
     onError: (error) => {
+      setFileOperationStatus('failed');
       toast({
         title: "Deployment Failed",
         description: error instanceof Error ? error.message : "An unknown error occurred",
@@ -146,7 +153,7 @@ const FileOperations: React.FC = () => {
       // Add validation results to logs
       if (data.results) {
         data.results.forEach((result: any) => {
-          const checksum = result.cksum ? `Checksum: ${result.cksum}` : 'No checksum available';
+          const checksum = result.cksum ? `Checksum=${result.cksum}` : 'No checksum available';
           const permissions = result.permissions ? `Permissions: ${result.permissions}` : '';
           
           setFileLogs(prev => [
@@ -170,20 +177,14 @@ const FileOperations: React.FC = () => {
   // Run shell command mutation
   const shellCommandMutation = useMutation({
     mutationFn: async () => {
+      setShellOperationStatus('loading');
+      
       // Determine the working directory
       let workingDirectory = shellWorkingDir;
       
       if (useUserHomePath && !shellWorkingDir) {
         workingDirectory = userHomes[shellSelectedUser] || `/home/${shellSelectedUser}`;
       }
-      
-      console.log("Shell command request:", {
-        command: shellCommand,
-        vms: shellSelectedVMs,
-        sudo: shellUseSudo,
-        user: shellSelectedUser,
-        workingDir: workingDirectory,
-      });
       
       const response = await fetch('/api/command/shell', {
         method: 'POST',
@@ -200,11 +201,13 @@ const FileOperations: React.FC = () => {
       });
       
       if (!response.ok) {
-        throw new Error('Shell command execution failed');
+        const errorText = await response.text();
+        throw new Error(errorText || 'Shell command execution failed');
       }
       
       const data = await response.json();
       setShellCommandId(data.deploymentId || data.commandId);
+      setShellOperationStatus('running');
       return data;
     },
     onSuccess: (data) => {
@@ -214,10 +217,10 @@ const FileOperations: React.FC = () => {
       });
       
       // Start polling for logs
-      startPollingLogs(data.deploymentId || data.commandId, setShellLogs);
+      pollLogs(data.deploymentId || data.commandId, setShellLogs, setShellOperationStatus);
     },
     onError: (error) => {
-      console.error("Shell command error:", error);
+      setShellOperationStatus('failed');
       toast({
         title: "Command Failed",
         description: error instanceof Error ? error.message : "An unknown error occurred",
@@ -226,14 +229,16 @@ const FileOperations: React.FC = () => {
     },
   });
 
-  // Add a function to poll for logs
-  const startPollingLogs = (id: string, logSetter: React.Dispatch<React.SetStateAction<string[]>>) => {
+  // Generic function to poll for logs with improved completion detection
+  const pollLogs = (id: string, logSetter: React.Dispatch<React.SetStateAction<string[]>>, statusSetter: React.Dispatch<React.SetStateAction<'idle' | 'loading' | 'running' | 'success' | 'failed' | 'completed'>>) => {
     if (!id) return;
     
     // Start with a clear log display
     logSetter([]);
+    statusSetter('running');
     
-    console.log(`Starting to poll logs for deployment ${id}`);
+    let pollCount = 0;
+    let lastLogLength = 0;
     
     // Set up polling interval
     const pollInterval = setInterval(async () => {
@@ -244,24 +249,58 @@ const FileOperations: React.FC = () => {
         }
         
         const data = await response.json();
-        console.log(`Received logs for ${id}:`, data);
-        
         if (data.logs) {
           logSetter(data.logs);
+          
+          // Check if operation is explicitly complete
+          if (data.status === 'completed' || data.status === 'success') {
+            statusSetter('success');
+            clearInterval(pollInterval);
+            return;
+          }
+          
+          if (data.status === 'failed') {
+            statusSetter('failed');
+            clearInterval(pollInterval);
+            return;
+          }
+          
+          // Check for implicit completion (logs not changing)
+          if (data.logs.length === lastLogLength) {
+            pollCount++;
+            if (pollCount >= 5) { // After 5 consecutive polls with no changes
+              console.log('Operation appears complete - logs have not changed');
+              statusSetter('success');
+              clearInterval(pollInterval);
+              return;
+            }
+          } else {
+            pollCount = 0;
+            lastLogLength = data.logs.length;
+          }
         }
         
-        // Stop polling if operation is complete
-        if (data.status !== 'running' && data.status !== 'pending') {
-          console.log(`Deployment ${id} is complete with status: ${data.status}`);
+        // Stop polling after 2 minutes as a safeguard
+        if (pollCount > 120) {
+          console.log('Operation timed out after 2 minutes');
+          statusSetter(data.status === 'running' ? 'running' : 'completed');
           clearInterval(pollInterval);
         }
       } catch (error) {
         console.error('Error fetching logs:', error);
-        clearInterval(pollInterval);
+        // Don't clear interval yet, try a few more times
+        pollCount += 5;
+        if (pollCount > 20) {  // After several failures, give up
+          statusSetter('failed');
+          clearInterval(pollInterval);
+        }
       }
     }, 1000); // Poll every second
     
-    return () => clearInterval(pollInterval);
+    // Clean up on unmount
+    return () => {
+      clearInterval(pollInterval);
+    };
   };
 
   // Handle VM selection changes for file operations
@@ -428,8 +467,11 @@ const FileOperations: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-[#F79B72] mb-2">Select VMs</label>
-              <VMSelector onSelectionChange={handleVMSelectionChange} />
+              <Label className="block text-[#F79B72] mb-2">Select VMs</Label>
+              <VMSelector 
+                onSelectionChange={handleVMSelectionChange}
+                selectedVMs={selectedVMs}
+              />
             </div>
 
             <div className="flex space-x-2">
@@ -437,9 +479,10 @@ const FileOperations: React.FC = () => {
                 type="button"
                 onClick={handleDeploy} 
                 className="bg-[#F79B72] text-[#2A4759] hover:bg-[#F79B72]/80"
-                disabled={deployMutation.isPending}
+                disabled={deployMutation.isPending || fileOperationStatus === 'running' || fileOperationStatus === 'loading'}
               >
-                {deployMutation.isPending ? "Deploying..." : "Deploy"}
+                {deployMutation.isPending || fileOperationStatus === 'running' || fileOperationStatus === 'loading' ? 
+                  "Deploying..." : "Deploy"}
               </Button>
               
               <div className="flex space-x-2 ml-2">
@@ -538,17 +581,21 @@ const FileOperations: React.FC = () => {
             </div>
             
             <div>
-              <label className="block text-[#F79B72] mb-2">Select VMs</label>
-              <VMSelector onSelectionChange={handleShellVMSelectionChange} />
+              <Label className="block text-[#F79B72] mb-2">Select VMs</Label>
+              <VMSelector 
+                onSelectionChange={handleShellVMSelectionChange}
+                selectedVMs={shellSelectedVMs}
+              />
             </div>
 
             <Button 
               type="button"
               onClick={handleRunShellCommand} 
               className="bg-[#F79B72] text-[#2A4759] hover:bg-[#F79B72]/80"
-              disabled={shellCommandMutation.isPending}
+              disabled={shellCommandMutation.isPending || shellOperationStatus === 'running' || shellOperationStatus === 'loading'}
             >
-              {shellCommandMutation.isPending ? "Running..." : "Run Command"}
+              {shellCommandMutation.isPending || shellOperationStatus === 'running' || shellOperationStatus === 'loading' ? 
+                "Running..." : "Run Command"}
             </Button>
           </div>
         </div>
@@ -561,7 +608,8 @@ const FileOperations: React.FC = () => {
               logs={fileLogs} 
               height="345px"
               fixedHeight={true}
-              title="File Deployment Logs" 
+              title="File Deployment Logs"
+              status={fileOperationStatus}
             />
           </div>
           
@@ -571,7 +619,8 @@ const FileOperations: React.FC = () => {
               logs={shellLogs} 
               height="485px"
               fixedHeight={true}
-              title="Shell Command Logs" 
+              title="Shell Command Logs"
+              status={shellOperationStatus}
             />
           </div>
         </div>

@@ -5,21 +5,6 @@
     {"name": "airflow", "type": "airflow", "ip": "44.204.30.65"},
     {"name": "imdg1", "type": "imdg", "ip": "54.164.38.145"}
   ],
-  "users": ["infadm", "abpwrk1"],
-  "db_users": ["postgres", "dbadmin"],
-  "db_connections": [
-    {
-      "hostname": "batch1-db", 
-      "ip": "52.90.129.147", 
-      "port": "5432", 
-      "users": ["postgres", "dbadmin"]
-    },
-    {
-      "hostname": "airflow-db", 
-      "ip": "44.204.30.65", 
-      "port": "5432", 
-      "users": ["postgres"]
-    }
-  ],
+  "users": ["infadm", "abpwrk1", "root"],
   "systemd_services": ["docker.service", "kafka", "zookeeper"]
 }

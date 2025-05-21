@@ -1,0 +1,16 @@
+
+{
+  "db_connections": [
+    {
+      "hostname": "10.172.145.204", 
+      "port": "5400", 
+      "users": ["xpidbo1cfg", "abpwrk1db", "postgres"]
+    },
+    {
+      "hostname": "10.172.145.205", 
+      "port": "5432", 
+      "users": ["postgres", "dbadmin"]
+    }
+  ],
+  "db_users": ["xpidbo1cfg", "abpwrk1db", "postgres", "dbadmin"]
+}

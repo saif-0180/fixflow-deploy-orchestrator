@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -26,18 +26,19 @@ interface Deployment {
 
 const DeploymentHistory: React.FC = () => {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [selectedDeploymentId, setSelectedDeploymentId] = useState<string | null>(null);
   const [deploymentLogs, setDeploymentLogs] = useState<string[]>([]);
   const [clearDays, setClearDays] = useState<number>(30);
   const [logStatus, setLogStatus] = useState<'idle' | 'loading' | 'running' | 'success' | 'failed' | 'completed'>('idle');
-  
-  // Fetch deployment history with NO automatic refetching
+  const [lastRefreshedTime, setLastRefreshedTime] = useState<string>(new Date().toLocaleTimeString());
+
+  // Fetch deployment history with manual refetch
   const { 
     data: deployments = [], 
     refetch: refetchDeployments, 
     isLoading: isLoadingDeployments,
-    isError: isErrorDeployments,
-    error: deploymentsError
+    isError: isErrorDeployments
   } = useQuery({
     queryKey: ['deployment-history'],
     queryFn: async () => {
@@ -51,6 +52,7 @@ const DeploymentHistory: React.FC = () => {
         }
         const data = await response.json();
         console.log("Received deployment history data:", data);
+        setLastRefreshedTime(new Date().toLocaleTimeString());
         return data as Deployment[];
       } catch (error) {
         console.error(`Error in history fetch: ${error}`);
@@ -58,9 +60,9 @@ const DeploymentHistory: React.FC = () => {
       }
     },
     staleTime: 1800000, // 30 minutes - consider data fresh for 30 minutes
-    refetchInterval: 0, // Disable automatic refetching
+    refetchInterval: 1800000, // Refetch every 30 minutes
     refetchOnWindowFocus: false, // Don't refetch on window focus
-    retry: 0, // Don't retry to avoid spamming server with requests
+    retry: 1, // Try once more on failure
   });
 
   // Function to fetch logs for a specific deployment
@@ -78,29 +80,25 @@ const DeploymentHistory: React.FC = () => {
       if (data.logs && data.logs.length > 0) {
         setDeploymentLogs(data.logs);
         setLogStatus(data.status === 'running' ? 'running' : 'success');
-        return data.logs;
       } else {
         // If no logs in response, check if the selected deployment has logs
         const selectedDeployment = deployments.find(d => d.id === deploymentId);
         if (selectedDeployment?.logs && selectedDeployment.logs.length > 0) {
           setDeploymentLogs(selectedDeployment.logs);
           setLogStatus(selectedDeployment.status === 'running' ? 'running' : 'success');
-          return selectedDeployment.logs;
         } else {
-          setDeploymentLogs(["No logs available for this deployment"]);
+          setDeploymentLogs([`No detailed logs available for deployment ${deploymentId}`]);
           setLogStatus('completed');
-          return ["No logs available for this deployment"];
         }
       }
     } catch (error) {
       console.error('Error fetching logs:', error);
       setDeploymentLogs(["Error loading logs. Please try again."]);
       setLogStatus('failed');
-      return ["Error loading logs. Please try again."];
     }
   };
 
-  // Effect to load logs once when a deployment is selected
+  // Effect to load logs when a deployment is selected
   useEffect(() => {
     if (selectedDeploymentId) {
       fetchDeploymentLogs(selectedDeploymentId);
@@ -108,6 +106,14 @@ const DeploymentHistory: React.FC = () => {
       setLogStatus('idle');
     }
   }, [selectedDeploymentId]);
+
+  // Manual refresh function
+  const handleRefresh = () => {
+    refetchDeployments();
+    if (selectedDeploymentId) {
+      fetchDeploymentLogs(selectedDeploymentId);
+    }
+  };
 
   // Clear logs mutation
   const clearLogsMutation = useMutation({
@@ -287,14 +293,21 @@ const DeploymentHistory: React.FC = () => {
           <Card className="bg-[#EEEEEE]">
             <CardHeader className="pb-2">
               <div className="flex justify-between items-center">
-                <CardTitle className="text-[#F79B72] text-lg">Recent Deployments</CardTitle>
+                <div>
+                  <CardTitle className="text-[#F79B72] text-lg">Recent Deployments</CardTitle>
+                  <p className="text-xs text-gray-500 mt-1">Last refreshed: {lastRefreshedTime}</p>
+                </div>
                 <Button
                   type="button"
-                  onClick={() => refetchDeployments()}
+                  onClick={handleRefresh}
                   className="bg-[#2A4759] text-white hover:bg-[#2A4759]/80 h-8 w-8 p-0"
                   title="Refresh"
+                  disabled={isLoadingDeployments}
                 >
-                  <RefreshCw className="h-4 w-4" />
+                  {isLoadingDeployments ? 
+                    <Loader2 className="h-4 w-4 animate-spin" /> : 
+                    <RefreshCw className="h-4 w-4" />
+                  }
                 </Button>
               </div>
             </CardHeader>

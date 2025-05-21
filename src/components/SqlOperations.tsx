@@ -17,7 +17,6 @@ import LogDisplay from '@/components/LogDisplay';
 
 interface DbConnection {
   hostname: string;
-  ip: string;
   port: string;
   users: string[];
 }
@@ -30,13 +29,13 @@ const SqlOperations = () => {
   const [dbPassword, setDbPassword] = useState<string>("");
   const [logs, setLogs] = useState<string[]>([]);
   const [deploymentId, setDeploymentId] = useState<string | null>(null);
-  const [hostname, setHostname] = useState<string>("");
-  const [port, setPort] = useState<string>("5432"); // Default PostgreSQL port
+  const [hostname, setHostname] = useState<string>("10.172.145.204");
+  const [port, setPort] = useState<string>("5400"); // Default port
   const [dbName, setDbName] = useState<string>("");
   const [customHost, setCustomHost] = useState<boolean>(false);
   const [customUser, setCustomUser] = useState<boolean>(false);
   const [customPort, setCustomPort] = useState<boolean>(false);
-  const [selectedConnection, setSelectedConnection] = useState<string>("");
+  const [selectedConnection, setSelectedConnection] = useState<string>("10.172.145.204");
   const [availableDbUsers, setAvailableDbUsers] = useState<string[]>([]);
   const [operationStatus, setOperationStatus] = useState<'idle' | 'loading' | 'running' | 'success' | 'failed' | 'completed'>('idle');
 
@@ -49,7 +48,8 @@ const SqlOperations = () => {
         throw new Error('Failed to fetch SQL FTs');
       }
       return response.json();
-    }
+    },
+    refetchOnWindowFocus: false,
   });
 
   // Fetch SQL files for selected FT
@@ -64,28 +64,34 @@ const SqlOperations = () => {
       return response.json();
     },
     enabled: !!selectedFt,
+    refetchOnWindowFocus: false,
   });
 
-  // Fetch DB connections from inventory
+  // Fetch DB connections from db_inventory
   const { data: dbConnections = [] } = useQuery({
     queryKey: ['db-connections'],
     queryFn: async () => {
       try {
-        const response = await fetch('/api/db/connections');
+        // Try to fetch the db_inventory.json directly
+        const response = await fetch('/inventory/db_inventory.json');
         if (!response.ok) {
-          console.error('Error fetching DB connections:', await response.text());
-          throw new Error('Failed to fetch DB connections');
+          throw new Error('Failed to fetch db_inventory.json');
         }
-        return response.json();
+        const data = await response.json();
+        return data.db_connections || [];
       } catch (error) {
         console.error('Error fetching DB connections:', error);
-        // Fallback - try to get from the inventory json directly
-        const invResponse = await fetch('/api/inventory');
-        if (!invResponse.ok) {
-          throw new Error('Failed to fetch inventory');
+        // Fallback to API endpoint if needed
+        try {
+          const apiResponse = await fetch('/api/db/connections');
+          if (!apiResponse.ok) {
+            throw new Error('Failed to fetch DB connections from API');
+          }
+          return await apiResponse.json();
+        } catch (apiError) {
+          console.error('Error fetching from API:', apiError);
+          return [];
         }
-        const inventory = await invResponse.json();
-        return inventory.db_connections || [];
       }
     },
     refetchOnWindowFocus: false,
@@ -95,20 +101,36 @@ const SqlOperations = () => {
   const { data: dbUsers = [] } = useQuery({
     queryKey: ['db-users'],
     queryFn: async () => {
-      const response = await fetch('/api/db/users');
-      if (!response.ok) {
-        throw new Error('Failed to fetch DB users');
+      try {
+        // Try to fetch the db_inventory.json directly
+        const response = await fetch('/inventory/db_inventory.json');
+        if (!response.ok) {
+          throw new Error('Failed to fetch db_inventory.json');
+        }
+        const data = await response.json();
+        return data.db_users || [];
+      } catch (error) {
+        console.error('Error fetching DB users:', error);
+        // Fallback to API endpoint if needed
+        try {
+          const apiResponse = await fetch('/api/db/users');
+          if (!apiResponse.ok) {
+            throw new Error('Failed to fetch DB users from API');
+          }
+          return await apiResponse.json();
+        } catch (apiError) {
+          console.error('Error fetching from API:', apiError);
+          return ["xpidbo1cfg", "postgres", "dbadmin"]; // Default values
+        }
       }
-      return response.json();
-    }
+    },
+    refetchOnWindowFocus: false,
   });
 
   // Update available users when connection changes
   useEffect(() => {
     if (!customUser && selectedConnection && dbConnections.length > 0) {
-      const connection = dbConnections.find((conn: DbConnection) => 
-        conn.hostname === selectedConnection || conn.ip === selectedConnection
-      );
+      const connection = dbConnections.find((conn: DbConnection) => conn.hostname === selectedConnection);
       
       if (connection) {
         setAvailableDbUsers(connection.users);
@@ -117,13 +139,9 @@ const SqlOperations = () => {
         if (!customPort) {
           setPort(connection.port);
         }
-        
-        if (!customHost) {
-          setHostname(connection.ip);
-        }
       }
     }
-  }, [selectedConnection, dbConnections, customUser, customPort, customHost]);
+  }, [selectedConnection, dbConnections, customUser, customPort]);
 
   // Deploy SQL mutation
   const sqlDeployMutation = useMutation({
@@ -182,52 +200,53 @@ const SqlOperations = () => {
     const fetchLogs = async () => {
       try {
         const response = await fetch(`/api/deploy/${deploymentId}/logs`);
-        if (response.ok) {
-          const data = await response.json();
-          if (data && data.logs) {
-            setLogs(data.logs);
-            
-            // Check if status is explicitly completed or failed
-            if (data.status === 'completed' || data.status === 'success') {
+        if (!response.ok) {
+          throw new Error('Failed to fetch logs');
+        }
+        
+        const data = await response.json();
+        if (data && data.logs) {
+          setLogs(data.logs);
+          
+          // Check if status is explicitly completed or failed
+          if (data.status === 'completed' || data.status === 'success') {
+            setOperationStatus('success');
+            if (pollingInterval) window.clearTimeout(pollingInterval as unknown as number);
+            return;
+          }
+          
+          if (data.status === 'failed') {
+            setOperationStatus('failed');
+            if (pollingInterval) window.clearTimeout(pollingInterval as unknown as number);
+            return;
+          }
+          
+          // Check for implicit completion by checking if logs haven't changed for a while
+          if (data.logs.length === previousLogLength) {
+            consecutiveSameLogCount++;
+            // If logs haven't changed for 5 consecutive checks, consider it completed
+            if (consecutiveSameLogCount >= 5) {
+              console.log("Operation appears to be complete (logs unchanged)");
               setOperationStatus('success');
-              if (pollingInterval) clearTimeout(pollingInterval);
+              if (pollingInterval) window.clearTimeout(pollingInterval as unknown as number);
               return;
             }
-            
-            if (data.status === 'failed') {
-              setOperationStatus('failed');
-              if (pollingInterval) clearTimeout(pollingInterval);
-              return;
-            }
-            
-            // Check for implicit completion by checking if logs haven't changed for a while
-            if (data.logs.length === previousLogLength) {
-              consecutiveSameLogCount++;
-              // If logs haven't changed for 3 consecutive checks, consider it completed
-              if (consecutiveSameLogCount >= 3) {
-                console.log("Operation appears to be complete (logs unchanged)");
-                setOperationStatus('success');
-                if (pollingInterval) clearTimeout(pollingInterval);
-                return;
-              }
-            } else {
-              consecutiveSameLogCount = 0;
-              previousLogLength = data.logs.length;
-            }
-            
-            // If not complete, schedule another fetch
-            pollingInterval = window.setTimeout(fetchLogs, 3000);
+          } else {
+            consecutiveSameLogCount = 0;
+            previousLogLength = data.logs.length;
           }
         }
+        
+        // Schedule another fetch
+        pollingInterval = window.setTimeout(fetchLogs, 2000) as unknown as number;
       } catch (error) {
         console.error("Error fetching logs:", error);
-        // Error handling - still try a few times
         consecutiveSameLogCount++;
         if (consecutiveSameLogCount >= 3) {
           setOperationStatus('failed');
-          if (pollingInterval) clearTimeout(pollingInterval);
+          if (pollingInterval) window.clearTimeout(pollingInterval as unknown as number);
         } else {
-          pollingInterval = window.setTimeout(fetchLogs, 3000);
+          pollingInterval = window.setTimeout(fetchLogs, 2000) as unknown as number;
         }
       }
     };
@@ -235,7 +254,7 @@ const SqlOperations = () => {
     fetchLogs();
     
     return () => {
-      if (pollingInterval) clearTimeout(pollingInterval);
+      if (pollingInterval) window.clearTimeout(pollingInterval as unknown as number);
     };
   }, [deploymentId]);
 
@@ -313,7 +332,7 @@ const SqlOperations = () => {
       <h2 className="text-2xl font-bold text-[#F79B72] mb-4">SQL Deployment</h2>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="space-y-4">
+        <div className="space-y-4 bg-[#EEEEEE] p-4 rounded-md">
           <div className="space-y-4">
             <div>
               <Label htmlFor="sql-ft-select" className="text-[#F79B72]">Select FT</Label>
@@ -356,12 +375,12 @@ const SqlOperations = () => {
                   onCheckedChange={(checked) => {
                     setCustomHost(checked === true);
                     if (checked === false) {
-                      setHostname("");
-                      setSelectedConnection("");
+                      setHostname(dbConnections.length > 0 ? dbConnections[0].hostname : "10.172.145.204");
+                      setSelectedConnection(dbConnections.length > 0 ? dbConnections[0].hostname : "10.172.145.204");
                     }
                   }}
                 />
-                <Label htmlFor="custom-connection" className="text-[#F79B72]">Enter database connection manually</Label>
+                <Label htmlFor="custom-connection" className="text-[#F79B72]">Enter database hostname manually</Label>
               </div>
               
               {customHost ? (
@@ -378,14 +397,17 @@ const SqlOperations = () => {
               ) : (
                 <div>
                   <Label htmlFor="db-connection-select" className="text-[#F79B72]">Select Database Connection</Label>
-                  <Select value={selectedConnection} onValueChange={setSelectedConnection}>
+                  <Select value={selectedConnection} onValueChange={(value) => {
+                    setSelectedConnection(value);
+                    setHostname(value);
+                  }}>
                     <SelectTrigger id="db-connection-select" className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]">
                       <SelectValue placeholder="Select a connection" className="text-[#2A4759]" />
                     </SelectTrigger>
                     <SelectContent className="bg-[#DDDDDD] border-[#2A4759] text-[#2A4759]">
                       {dbConnections.map((conn: DbConnection) => (
                         <SelectItem key={conn.hostname} value={conn.hostname} className="text-[#2A4759]">
-                          {conn.hostname} ({conn.ip}:{conn.port})
+                          {conn.hostname}:{conn.port}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -402,7 +424,14 @@ const SqlOperations = () => {
                   checked={customPort} 
                   onCheckedChange={(checked) => {
                     setCustomPort(checked === true);
-                    if (!checked) setPort("5432");
+                    if (!checked && selectedConnection) {
+                      const connection = dbConnections.find((conn: DbConnection) => conn.hostname === selectedConnection);
+                      if (connection) {
+                        setPort(connection.port);
+                      } else {
+                        setPort("5432");
+                      }
+                    }
                   }}
                 />
                 <Label htmlFor="custom-port" className="text-[#F79B72]">Enter port manually</Label>
@@ -414,6 +443,7 @@ const SqlOperations = () => {
                   id="port" 
                   value={port} 
                   onChange={(e) => setPort(e.target.value)}
+                  disabled={!customPort}
                   className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]"
                   placeholder="Enter database port"
                 />
@@ -428,7 +458,7 @@ const SqlOperations = () => {
                 value={dbName} 
                 onChange={(e) => setDbName(e.target.value)}
                 className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]"
-                placeholder="Enter database name"
+                placeholder="Enter database name (e.g., ocstc1p)"
               />
             </div>
 
@@ -454,7 +484,7 @@ const SqlOperations = () => {
                     value={selectedDbUser} 
                     onChange={(e) => setSelectedDbUser(e.target.value)}
                     className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]"
-                    placeholder="Enter database username"
+                    placeholder="Enter database username (e.g., xpidbo1cfg)"
                   />
                 </div>
               ) : (

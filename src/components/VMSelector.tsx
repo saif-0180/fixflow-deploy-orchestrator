@@ -6,11 +6,16 @@ import { Label } from "@/components/ui/label";
 
 export interface VMSelectorProps {
   onSelectionChange: (vms: string[]) => void;
+  selectedVMs?: string[];
   selectedTypes?: string[];
 }
 
-const VMSelector: React.FC<VMSelectorProps> = ({ onSelectionChange, selectedTypes = [] }) => {
-  const [selectedVMs, setSelectedVMs] = useState<string[]>([]);
+const VMSelector: React.FC<VMSelectorProps> = ({ 
+  onSelectionChange, 
+  selectedVMs = [], 
+  selectedTypes = [] 
+}) => {
+  const [selectedVMList, setSelectedVMList] = useState<string[]>(selectedVMs);
   const [vmsByType, setVmsByType] = useState<Record<string, string[]>>({});
 
   // Fetch VMs from inventory
@@ -46,36 +51,43 @@ const VMSelector: React.FC<VMSelectorProps> = ({ onSelectionChange, selectedType
     setVmsByType(groupedVMs);
   }, [vms]);
 
+  // Update selected VMs state when prop changes
+  useEffect(() => {
+    if (selectedVMs.length > 0) {
+      setSelectedVMList(selectedVMs);
+    }
+  }, [selectedVMs]);
+
   // Handle checkbox changes
   const handleVMChange = (vmName: string, checked: boolean) => {
     const updatedSelection = checked
-      ? [...selectedVMs, vmName]
-      : selectedVMs.filter(vm => vm !== vmName);
+      ? [...selectedVMList, vmName]
+      : selectedVMList.filter(vm => vm !== vmName);
     
-    setSelectedVMs(updatedSelection);
+    setSelectedVMList(updatedSelection);
     onSelectionChange(updatedSelection);
   };
 
   // Handle type selection
   const handleTypeSelection = (type: string, checked: boolean) => {
-    let updatedSelection = [...selectedVMs];
+    let updatedSelection = [...selectedVMList];
     
     if (checked) {
       // Add all VMs of this type that aren't already selected
-      const vmsToAdd = vmsByType[type]?.filter(vm => !selectedVMs.includes(vm)) || [];
+      const vmsToAdd = vmsByType[type]?.filter(vm => !selectedVMList.includes(vm)) || [];
       updatedSelection = [...updatedSelection, ...vmsToAdd];
     } else {
       // Remove all VMs of this type
       updatedSelection = updatedSelection.filter(vm => !vmsByType[type]?.includes(vm));
     }
     
-    setSelectedVMs(updatedSelection);
+    setSelectedVMList(updatedSelection);
     onSelectionChange(updatedSelection);
   };
 
   // Check if all VMs of a type are selected
   const isTypeSelected = (type: string) => {
-    return vmsByType[type]?.every(vm => selectedVMs.includes(vm)) || false;
+    return vmsByType[type]?.every(vm => selectedVMList.includes(vm)) || false;
   };
 
   if (isLoading) {
@@ -104,7 +116,7 @@ const VMSelector: React.FC<VMSelectorProps> = ({ onSelectionChange, selectedType
                   <div key={vm} className="flex items-center space-x-2">
                     <Checkbox 
                       id={`vm-${vm}`}
-                      checked={selectedVMs.includes(vm)}
+                      checked={selectedVMList.includes(vm)}
                       onCheckedChange={(checked) => handleVMChange(vm, checked === true)}
                     />
                     <Label htmlFor={`vm-${vm}`}>{vm}</Label>
