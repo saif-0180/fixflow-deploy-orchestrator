@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,6 +45,10 @@ const FileOperations: React.FC = () => {
     'root': '/root'
   });
 
+  // New state for managing rollbacks
+  const [lastDeployments, setLastDeployments] = useState<any[]>([]);
+  const [selectedRollbackId, setSelectedRollbackId] = useState<string | null>(null);
+
   // Fetch all FTs
   const { data: fts = [] } = useQuery({
     queryKey: ['fts'],
@@ -73,6 +76,36 @@ const FileOperations: React.FC = () => {
     enabled: !!selectedFt,
     refetchOnWindowFocus: false,
   });
+
+  // Fetch recent file deployments for rollback (new query)
+  const { data: recentFileDeployments = [] } = useQuery({
+    queryKey: ['recent-file-deployments'],
+    queryFn: async () => {
+      try {
+        const response = await fetch('/api/deployments/files/recent');
+        if (!response.ok) {
+          console.error(`Failed to fetch recent deployments: ${await response.text()}`);
+          return [];
+        }
+        const data = await response.json();
+        return data.filter((deployment: any) => 
+          deployment.type === 'file' && deployment.status === 'success'
+        ).slice(0, 10); // Get last 10 successful file deployments
+      } catch (error) {
+        console.error('Error fetching recent deployments:', error);
+        return [];
+      }
+    },
+    refetchOnWindowFocus: false,
+    staleTime: 300000, // 5 minutes
+  });
+  
+  // Update lastDeployments when recentFileDeployments changes
+  useEffect(() => {
+    if (recentFileDeployments && recentFileDeployments.length > 0) {
+      setLastDeployments(recentFileDeployments);
+    }
+  }, [recentFileDeployments]);
 
   // Deploy mutation
   const deployMutation = useMutation({
@@ -116,6 +149,48 @@ const FileOperations: React.FC = () => {
       setFileOperationStatus('failed');
       toast({
         title: "Deployment Failed",
+        description: error instanceof Error ? error.message : "An unknown error occurred",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Rollback mutation (newly added)
+  const rollbackMutation = useMutation({
+    mutationFn: async (deploymentId: string) => {
+      setFileOperationStatus('loading');
+      const response = await fetch(`/api/deploy/${deploymentId}/rollback`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to rollback deployment');
+      }
+      
+      const data = await response.json();
+      setDeploymentId(data.deploymentId);
+      setFileOperationStatus('running');
+      return data;
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Rollback Started",
+        description: "File rollback has been initiated.",
+      });
+      
+      // Start polling for logs
+      pollLogs(data.deploymentId, setFileLogs, setFileOperationStatus);
+      
+      // Clear rollback selection after initiating
+      setSelectedRollbackId(null);
+    },
+    onError: (error) => {
+      setFileOperationStatus('failed');
+      toast({
+        title: "Rollback Failed",
         description: error instanceof Error ? error.message : "An unknown error occurred",
         variant: "destructive",
       });
@@ -356,6 +431,25 @@ const FileOperations: React.FC = () => {
     deployMutation.mutate();
   };
 
+  // New function to handle rollback
+  const handleRollback = (e: React.MouseEvent) => {
+    e.preventDefault();
+    
+    if (!selectedRollbackId) {
+      toast({
+        title: "Validation Error",
+        description: "Please select a deployment to rollback.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (window.confirm("Are you sure you want to rollback this deployment? This will restore the previous version of the file.")) {
+      setFileLogs([]);
+      rollbackMutation.mutate(selectedRollbackId);
+    }
+  };
+
   const handleRunShellCommand = (e: React.MouseEvent) => {
     e.preventDefault(); // Prevent the default action
     
@@ -381,6 +475,14 @@ const FileOperations: React.FC = () => {
     shellCommandMutation.mutate();
   };
 
+  // Format the deployment summary for the rollback dropdown
+  const formatDeploymentSummary = (deployment: any): string => {
+    if (!deployment) return '';
+    
+    const date = deployment.timestamp ? new Date(deployment.timestamp).toLocaleString() : 'Unknown date';
+    return `${deployment.ft || 'Unknown'}/${deployment.file || 'Unknown'} - ${date}`;
+  };
+
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold text-[#F79B72] mb-4">File Operations</h2>
@@ -397,9 +499,9 @@ const FileOperations: React.FC = () => {
                 <SelectTrigger id="ft-select" className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]">
                   <SelectValue placeholder="Select an FT" className="text-[#2A4759]" />
                 </SelectTrigger>
-                <SelectContent className="bg-[#DDDDDD] border-[#2A4759] text-[#2A4759]">
+                <SelectContent>
                   {fts.map((ft: string) => (
-                    <SelectItem key={ft} value={ft} className="text-[#2A4759]">{ft}</SelectItem>
+                    <SelectItem key={ft} value={ft}>{ft}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -415,9 +517,9 @@ const FileOperations: React.FC = () => {
                 <SelectTrigger id="file-select" className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]">
                   <SelectValue placeholder="Select a file" className="text-[#2A4759]" />
                 </SelectTrigger>
-                <SelectContent className="bg-[#DDDDDD] border-[#2A4759] text-[#2A4759]">
+                <SelectContent>
                   {files.map((file: string) => (
-                    <SelectItem key={file} value={file} className="text-[#2A4759]">{file}</SelectItem>
+                    <SelectItem key={file} value={file}>{file}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -429,10 +531,10 @@ const FileOperations: React.FC = () => {
                 <SelectTrigger id="user-select" className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]">
                   <SelectValue placeholder="Select a user" className="text-[#2A4759]" />
                 </SelectTrigger>
-                <SelectContent className="bg-[#DDDDDD] border-[#2A4759] text-[#2A4759]">
-                  <SelectItem value="infadm" className="text-[#2A4759]">infadm</SelectItem>
-                  <SelectItem value="abpwrk1" className="text-[#2A4759]">abpwrk1</SelectItem>
-                  <SelectItem value="root" className="text-[#2A4759]">root</SelectItem>
+                <SelectContent>
+                  <SelectItem value="infadm">infadm</SelectItem>
+                  <SelectItem value="abpwrk1">abpwrk1</SelectItem>
+                  <SelectItem value="root">root</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -503,6 +605,41 @@ const FileOperations: React.FC = () => {
                 </Button>
               </div>
             </div>
+            
+            {/* New Rollback Section */}
+            <div className="mt-4 pt-4 border-t border-[#2A4759]/30">
+              <h4 className="text-md font-medium text-[#F79B72] mb-2">Rollback Previous Deployment</h4>
+              <div>
+                <Label htmlFor="rollback-select" className="text-[#F79B72]">Select Deployment</Label>
+                <Select 
+                  value={selectedRollbackId || ''} 
+                  onValueChange={setSelectedRollbackId}
+                  disabled={lastDeployments.length === 0}
+                >
+                  <SelectTrigger id="rollback-select" className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]">
+                    <SelectValue placeholder="Select a deployment" className="text-[#2A4759]" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {lastDeployments.map((deployment) => (
+                      <SelectItem key={deployment.id} value={deployment.id}>
+                        {formatDeploymentSummary(deployment)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="mt-2">
+                <Button 
+                  type="button"
+                  onClick={handleRollback} 
+                  className="bg-[#2A4759] text-white hover:bg-[#2A4759]/80"
+                  disabled={!selectedRollbackId || rollbackMutation.isPending || fileOperationStatus === 'running' || fileOperationStatus === 'loading'}
+                >
+                  {rollbackMutation.isPending ? "Rolling Back..." : "Rollback Deployment"}
+                </Button>
+              </div>
+            </div>
           </div>
           
           {/* Shell Command Section */}
@@ -524,10 +661,10 @@ const FileOperations: React.FC = () => {
                 <SelectTrigger id="shell-user-select" className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]">
                   <SelectValue placeholder="Select a user" className="text-[#2A4759]" />
                 </SelectTrigger>
-                <SelectContent className="bg-[#DDDDDD] border-[#2A4759] text-[#2A4759]">
-                  <SelectItem value="infadm" className="text-[#2A4759]">infadm</SelectItem>
-                  <SelectItem value="abpwrk1" className="text-[#2A4759]">abpwrk1</SelectItem>
-                  <SelectItem value="root" className="text-[#2A4759]">root</SelectItem>
+                <SelectContent>
+                  <SelectItem value="infadm">infadm</SelectItem>
+                  <SelectItem value="abpwrk1">abpwrk1</SelectItem>
+                  <SelectItem value="root">root</SelectItem>
                 </SelectContent>
               </Select>
             </div>

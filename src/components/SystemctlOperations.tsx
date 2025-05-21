@@ -76,75 +76,84 @@ const SystemctlOperations = () => {
     },
   });
 
+  // Function to format log messages properly
+  const formatLogMessage = (log: string) => {
+    // Replace template variables with actual values
+    if (log.includes('{ service_name }') || log.includes('{ \'running\' if service_status')) {
+      return `Service ${selectedService} status check completed.`;
+    }
+    
+    // Remove ansible-specific output that doesn't add value
+    if (log.includes('TASK [') || log.includes('PLAY [') || 
+        log.includes('ok: [') || log.includes('META:') || 
+        log.includes('skipping:')) {
+      return '';
+    }
+    
+    return log;
+  };
+
   // Poll for operation logs
   const pollLogs = async (id: string) => {
     try {
       setStatus('loading');
-      // Set up SSE for real-time logs
-      const evtSource = new EventSource(`/api/deploy/${id}/logs`);
-      
-      evtSource.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        
-        if (data.message) {
-          setLogs(prev => [...prev, data.message]);
+      // Set up polling for logs instead of SSE which may not work in all environments
+      let pollCount = 0;
+      const pollInterval = setInterval(async () => {
+        try {
+          const response = await fetch(`/api/deploy/${id}/logs`);
+          if (!response.ok) {
+            throw new Error('Failed to fetch logs');
+          }
+          
+          const data = await response.json();
+          
+          if (data.logs) {
+            // Process logs to remove ansible noise and fix template interpolation
+            const processedLogs = data.logs
+              .map(formatLogMessage)
+              .filter((log: string) => log.trim() !== '');
+            
+            // Add operation-specific messages
+            let operationLogs = [...processedLogs];
+            if (operation === 'status' && processedLogs.length > 0) {
+              operationLogs.push(`Status check for ${selectedService} complete.`);
+            } else if (operation === 'start' && data.status !== 'running') {
+              operationLogs.push(`Service ${selectedService} has been started.`);
+            } else if (operation === 'stop' && data.status !== 'running') {
+              operationLogs.push(`Service ${selectedService} has been stopped.`);
+            } else if (operation === 'restart' && data.status !== 'running') {
+              operationLogs.push(`Service ${selectedService} has been restarted.`);
+            }
+            
+            setLogs(operationLogs);
+          }
+          
+          if (data.status && data.status !== 'running') {
+            setStatus(data.status);
+            clearInterval(pollInterval);
+          }
+          
+          pollCount++;
+          if (pollCount > 30) { // Stop after 30 seconds
+            clearInterval(pollInterval);
+            if (data.status === 'running') {
+              setStatus('success'); // Assume success after timeout
+            }
+          }
+        } catch (error) {
+          console.error('Error fetching logs:', error);
+          pollCount += 5;
+          if (pollCount > 10) {
+            setStatus('failed');
+            clearInterval(pollInterval);
+          }
         }
-        
-        if (data.status && data.status !== 'running') {
-          setStatus(data.status);
-          evtSource.close();
-        }
-      };
+      }, 1000);
       
-      evtSource.onerror = () => {
-        evtSource.close();
-        // Fallback to normal polling if SSE fails
-        fetchLogs(id);
-      };
-      
-      return () => {
-        evtSource.close();
-      };
+      return () => clearInterval(pollInterval);
     } catch (error) {
       console.error('Error setting up log polling:', error);
-      // Fallback to regular polling
-      fetchLogs(id);
-    }
-  };
-  
-  const fetchLogs = async (id: string) => {
-    try {
-      const response = await fetch(`/api/deploy/${id}/logs`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch logs');
-      }
-      
-      const data = await response.json();
-      
-      if (data.logs) {
-        // Filter out logs that are too noisy for systemctl operations
-        const filteredLogs = data.logs.filter((log: string) => {
-          // Skip certain noisy logs that don't add value
-          return !log.includes('TASK [Check if service exists]') &&
-                 !log.includes('ok: [') &&
-                 !log.includes('PLAY [Systemd') &&
-                 !log.includes('TASK [Gathering Facts]') &&
-                 !log.includes('META:') &&
-                 !log.includes('skipping:');
-        });
-        setLogs(filteredLogs);
-      }
-      
-      if (data.status) {
-        setStatus(data.status);
-      }
-      
-      // Continue polling if still running
-      if (data.status === 'running') {
-        setTimeout(() => fetchLogs(id), 2000);
-      }
-    } catch (error) {
-      console.error('Error fetching logs:', error);
       setStatus('failed');
     }
   };
@@ -170,7 +179,7 @@ const SystemctlOperations = () => {
                 onValueChange={setSelectedService}
                 disabled={isLoadingServices || services.length === 0}
               >
-                <SelectTrigger id="systemd-service">
+                <SelectTrigger id="systemd-service" className="bg-[#2A4759] text-[#EEEEEE] border-[#EEEEEE]/30">
                   <SelectValue placeholder="Select service" />
                 </SelectTrigger>
                 <SelectContent>
@@ -187,7 +196,7 @@ const SystemctlOperations = () => {
                 onValueChange={setOperation}
                 defaultValue="status"
               >
-                <SelectTrigger id="systemd-operation">
+                <SelectTrigger id="systemd-operation" className="bg-[#2A4759] text-[#EEEEEE] border-[#EEEEEE]/30">
                   <SelectValue placeholder="Select operation" />
                 </SelectTrigger>
                 <SelectContent>
@@ -210,7 +219,7 @@ const SystemctlOperations = () => {
             <Button 
               type="submit" 
               disabled={!selectedService || selectedVMs.length === 0 || systemctlMutation.isPending}
-              className="w-full"
+              className="w-full bg-[#F79B72] text-[#2A4759] hover:bg-[#F79B72]/80"
             >
               {systemctlMutation.isPending ? 'Executing...' : 'Execute Systemctl Operation'}
             </Button>

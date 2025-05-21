@@ -32,6 +32,7 @@ const DeploymentHistory: React.FC = () => {
   const [clearDays, setClearDays] = useState<number>(30);
   const [logStatus, setLogStatus] = useState<'idle' | 'loading' | 'running' | 'success' | 'failed' | 'completed'>('idle');
   const [lastRefreshedTime, setLastRefreshedTime] = useState<string>(new Date().toLocaleTimeString());
+  const [apiErrorMessage, setApiErrorMessage] = useState<string>("");
 
   // Fetch deployment history with manual refetch
   const { 
@@ -43,19 +44,36 @@ const DeploymentHistory: React.FC = () => {
     queryKey: ['deployment-history'],
     queryFn: async () => {
       console.log("Fetching deployment history");
+      setApiErrorMessage(""); // Clear any previous errors
       try {
         const response = await fetch('/api/deployments/history');
+        // Add explicit error handling for non-JSON responses
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.indexOf("application/json") === -1) {
+          const errorText = await response.text();
+          console.error(`Server returned non-JSON response: ${errorText}`);
+          setApiErrorMessage("API returned HTML instead of JSON. Backend service might be unavailable.");
+          return [];
+        }
+        
         if (!response.ok) {
           const errorText = await response.text();
           console.error(`Failed to fetch deployment history: ${errorText}`);
+          setApiErrorMessage(`Failed to fetch deployment history: ${response.status} ${response.statusText}`);
           throw new Error('Failed to fetch deployment history');
         }
+        
         const data = await response.json();
         console.log("Received deployment history data:", data);
         setLastRefreshedTime(new Date().toLocaleTimeString());
         return data as Deployment[];
       } catch (error) {
         console.error(`Error in history fetch: ${error}`);
+        if (error instanceof SyntaxError) {
+          setApiErrorMessage("Server returned invalid JSON. The backend might be down or misconfigured.");
+        } else {
+          setApiErrorMessage(`Error fetching deployment history: ${error instanceof Error ? error.message : String(error)}`);
+        }
         return []; // Return empty array instead of throwing to avoid UI errors
       }
     },
@@ -297,8 +315,17 @@ const DeploymentHistory: React.FC = () => {
                   </div>
                 ) : (
                   <div className="space-y-2">
+                    {apiErrorMessage && (
+                      <div className="p-4 bg-red-100 text-red-800 rounded-md mb-4">
+                        <p className="font-medium">API Error:</p>
+                        <p className="text-sm">{apiErrorMessage}</p>
+                      </div>
+                    )}
+                    
                     {displayDeployments.length === 0 ? (
-                      <p className="text-[#2A4759] italic">No deployment history found</p>
+                      <p className="text-[#2A4759] italic">
+                        {apiErrorMessage ? "Could not load deployment history" : "No deployment history found"}
+                      </p>
                     ) : (
                       displayDeployments.map((deployment) => (
                         <div 

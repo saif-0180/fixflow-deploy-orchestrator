@@ -56,23 +56,23 @@ const VMSelector: React.FC<VMSelectorProps> = ({
   };
 
   if (isLoading) {
-    return <div>Loading VM list...</div>;
+    return <div className="text-[#EEEEEE]">Loading VM list...</div>;
   }
 
   return (
     <div className="space-y-2">
       <div className="grid grid-cols-1 gap-2">
         {vmsData.length === 0 ? (
-          <p className="text-sm text-gray-400">No VMs available in inventory.</p>
+          <p className="text-sm text-[#EEEEEE]">No VMs available in inventory.</p>
         ) : (
           vmsData.map((vm: any) => (
-            <div key={vm.name} className="flex items-center space-x-2">
+            <div key={vm.name} className="flex items-center space-x-2 bg-[#2A4759] p-2 rounded-md">
               <Checkbox 
                 id={`vm-${vm.name}`}
                 checked={selectedVMList.includes(vm.name)}
                 onCheckedChange={(checked) => handleVMChange(vm.name, checked === true)}
               />
-              <Label htmlFor={`vm-${vm.name}`}>{vm.name}</Label>
+              <Label htmlFor={`vm-${vm.name}`} className="text-[#EEEEEE]">{vm.name}</Label>
             </div>
           ))
         )}
