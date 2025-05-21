@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -41,8 +42,8 @@ const DeploymentHistory: React.FC = () => {
   } = useQuery({
     queryKey: ['deployment-history'],
     queryFn: async () => {
+      console.log("Fetching deployment history");
       try {
-        console.log("Fetching deployment history");
         const response = await fetch('/api/deployments/history');
         if (!response.ok) {
           const errorText = await response.text();
@@ -58,20 +59,25 @@ const DeploymentHistory: React.FC = () => {
         return []; // Return empty array instead of throwing to avoid UI errors
       }
     },
-    staleTime: 1800000, // 30 minutes - consider data fresh for 30 minutes
+    staleTime: 300000, // 5 minutes - consider data fresh for 5 minutes
     refetchInterval: 1800000, // Refetch every 30 minutes
     refetchOnWindowFocus: false, // Don't refetch on window focus
-    retry: 1, // Try once more on failure
+    retry: 2,
   });
 
   // Function to fetch logs for a specific deployment
   const fetchDeploymentLogs = async (deploymentId: string) => {
+    if (!deploymentId) {
+      console.log("No deployment ID to fetch logs for");
+      return;
+    }
+    
     try {
       setLogStatus('loading');
       console.log(`Fetching logs for deployment ${deploymentId}`);
       const response = await fetch(`/api/deploy/${deploymentId}/logs`);
       if (!response.ok) {
-        throw new Error('Failed to fetch logs');
+        throw new Error(`Failed to fetch logs: ${await response.text()}`);
       }
       const data = await response.json();
       console.log(`Received logs for ${deploymentId}:`, data);
@@ -97,14 +103,31 @@ const DeploymentHistory: React.FC = () => {
     }
   };
 
-  // Effect to load logs when a deployment is selected
+  // Effect to load logs when a deployment is selected and poll every 5 seconds if running
   useEffect(() => {
-    if (selectedDeploymentId) {
-      fetchDeploymentLogs(selectedDeploymentId);
-    } else {
+    if (!selectedDeploymentId) {
       setLogStatus('idle');
+      return;
     }
-  }, [selectedDeploymentId]);
+    
+    fetchDeploymentLogs(selectedDeploymentId);
+    
+    // If status is running, poll for updates every 5 seconds
+    let intervalId: number | null = null;
+    
+    if (logStatus === 'running') {
+      intervalId = window.setInterval(() => {
+        console.log("Polling for log updates...");
+        fetchDeploymentLogs(selectedDeploymentId);
+      }, 5000) as unknown as number;
+    }
+    
+    return () => {
+      if (intervalId !== null) {
+        window.clearInterval(intervalId);
+      }
+    };
+  }, [selectedDeploymentId, logStatus]);
 
   // Manual refresh function
   const handleRefresh = () => {
@@ -136,10 +159,10 @@ const DeploymentHistory: React.FC = () => {
     onSuccess: (data) => {
       toast({
         title: "Logs Cleared",
-        description: data.message,
+        description: data.message || "Logs have been cleared successfully",
       });
       refetchDeployments();
-      setSelectedDeploymentId(null); // Clear selection since it might be deleted
+      setSelectedDeploymentId(null);
       setDeploymentLogs([]);
     },
     onError: (error) => {
@@ -219,7 +242,7 @@ const DeploymentHistory: React.FC = () => {
   };
 
   const handleClearLogs = (e: React.FormEvent) => {
-    e.preventDefault(); // Prevent form submission which causes page reload
+    e.preventDefault();
     
     if (clearDays < 0) {
       toast({
@@ -252,35 +275,7 @@ const DeploymentHistory: React.FC = () => {
     return formatDeploymentSummary(deployment);
   };
 
-  // Mock placeholder data if there's an error or no data
-  const getPlaceholderDeployments = (): Deployment[] => {
-    if (isErrorDeployments || (deployments && deployments.length === 0)) {
-      return [
-        {
-          id: "placeholder-1",
-          type: "file",
-          status: "success",
-          timestamp: new Date().toISOString(),
-          ft: "ft-1978",
-          vms: ["batch1", "airflow"],
-          logs: ["Deployment history will appear here when available."]
-        },
-        {
-          id: "placeholder-2",
-          type: "systemd",
-          status: "success",
-          timestamp: new Date().toISOString(),
-          service: "docker.service",
-          operation: "restart",
-          vms: ["batch1"],
-          logs: ["Service operations will be logged here."]
-        }
-      ];
-    }
-    return deployments;
-  };
-
-  const displayDeployments = getPlaceholderDeployments();
+  const displayDeployments = deployments;
 
   return (
     <div className="space-y-6">

@@ -71,29 +71,22 @@ const SqlOperations = () => {
     queryKey: ['db-connections'],
     queryFn: async () => {
       try {
-        // Try to fetch the db_inventory.json directly
+        console.log("Fetching DB connections from inventory");
         const response = await fetch('/inventory/db_inventory.json');
         if (!response.ok) {
+          console.error('DB inventory fetch failed:', await response.text());
           throw new Error('Failed to fetch db_inventory.json');
         }
         const data = await response.json();
+        console.log("DB connections loaded:", data.db_connections);
         return data.db_connections || [];
       } catch (error) {
         console.error('Error fetching DB connections:', error);
-        // Fallback to API endpoint if needed
-        try {
-          const apiResponse = await fetch('/api/db/connections');
-          if (!apiResponse.ok) {
-            throw new Error('Failed to fetch DB connections from API');
-          }
-          return await apiResponse.json();
-        } catch (apiError) {
-          console.error('Error fetching from API:', apiError);
-          return [];
-        }
+        return []; // Return empty array on error
       }
     },
     refetchOnWindowFocus: false,
+    retry: 2,
   });
 
   // Fetch DB users from inventory
@@ -101,42 +94,36 @@ const SqlOperations = () => {
     queryKey: ['db-users'],
     queryFn: async () => {
       try {
-        // Try to fetch the db_inventory.json directly
+        console.log("Fetching DB users from inventory");
         const response = await fetch('/inventory/db_inventory.json');
         if (!response.ok) {
+          console.error('DB inventory fetch failed:', await response.text());
           throw new Error('Failed to fetch db_inventory.json');
         }
         const data = await response.json();
+        console.log("DB users loaded:", data.db_users);
         return data.db_users || [];
       } catch (error) {
         console.error('Error fetching DB users:', error);
-        // Fallback to API endpoint if needed
-        try {
-          const apiResponse = await fetch('/api/db/users');
-          if (!apiResponse.ok) {
-            throw new Error('Failed to fetch DB users from API');
-          }
-          return await apiResponse.json();
-        } catch (apiError) {
-          console.error('Error fetching from API:', apiError);
-          return ["xpidbo1cfg", "postgres", "dbadmin"]; // Default values
-        }
+        return ["xpidbo1cfg", "postgres", "dbadmin"]; // Default values on error
       }
     },
     refetchOnWindowFocus: false,
+    retry: 2,
   });
 
   // Update available users when connection changes
   useEffect(() => {
-    if (!customUser && selectedConnection && dbConnections.length > 0) {
+    if (!customUser && selectedConnection && dbConnections && dbConnections.length > 0) {
       const connection = dbConnections.find((conn: DbConnection) => conn.hostname === selectedConnection);
       
       if (connection) {
-        setAvailableDbUsers(connection.users);
+        console.log("Setting available users for connection:", connection.hostname, connection.users);
+        setAvailableDbUsers(connection.users || []);
         setSelectedDbUser("");
         
         if (!customPort) {
-          setPort(connection.port);
+          setPort(connection.port || "5432");
         }
       }
     }
@@ -426,7 +413,7 @@ const SqlOperations = () => {
                     if (!checked && selectedConnection) {
                       const connection = dbConnections.find((conn: DbConnection) => conn.hostname === selectedConnection);
                       if (connection) {
-                        setPort(connection.port);
+                        setPort(connection.port || "5432");
                       } else {
                         setPort("5432");
                       }
