@@ -26,11 +26,28 @@ const SystemctlOperations = () => {
   const { data: services = [] } = useQuery({
     queryKey: ['systemd-services'],
     queryFn: async () => {
-      const response = await fetch('/api/systemd/services');
-      if (!response.ok) {
-        throw new Error('Failed to fetch systemd services');
+      try {
+        // First try to fetch from inventory directly
+        const response = await fetch('/inventory/inventory.json');
+        if (!response.ok) {
+          throw new Error('Failed to fetch inventory.json');
+        }
+        const data = await response.json();
+        return data.systemd_services || [];
+      } catch (error) {
+        console.error('Error fetching from inventory:', error);
+        // Fallback to API
+        try {
+          const apiResponse = await fetch('/api/systemd/services');
+          if (!apiResponse.ok) {
+            throw new Error('Failed to fetch systemd services from API');
+          }
+          return await apiResponse.json();
+        } catch (apiError) {
+          console.error('Error fetching from API:', apiError);
+          return ['docker.service', 'kafka', 'zookeeper'];
+        }
       }
-      return response.json();
     }
   });
 
@@ -72,6 +89,13 @@ const SystemctlOperations = () => {
         title: "Systemctl Operation Started",
         description: `Systemctl ${selectedOperation} operation has been initiated.`,
       });
+      
+      // Poll for logs immediately
+      setTimeout(() => {
+        if (deploymentId) {
+          fetchLogs(deploymentId);
+        }
+      }, 1000);
     },
     onError: (error) => {
       setOperationStatus('failed');
@@ -83,84 +107,49 @@ const SystemctlOperations = () => {
     },
   });
 
-  // Fetch log updates with improved completion detection
-  useEffect(() => {
-    if (!deploymentId) return;
-
-    let pollingInterval: number | null = null;
-    let consecutiveSameLogCount = 0;
-    let previousLogLength = 0;
-
-    // Initial logs fetch
-    const fetchLogs = async () => {
-      try {
-        const response = await fetch(`/api/deploy/${deploymentId}/logs`);
-        if (response.ok) {
-          const data = await response.json();
-          if (data && data.logs) {
-            setLogs(data.logs);
-            
-            // Check if status is explicitly completed or failed
-            if (data.status === 'completed' || data.status === 'success') {
-              setOperationStatus('success');
-              if (pollingInterval) clearTimeout(pollingInterval);
-              return;
-            }
-            
-            if (data.status === 'failed') {
-              setOperationStatus('failed');
-              if (pollingInterval) clearTimeout(pollingInterval);
-              return;
-            }
-            
-            // Check for implicit completion by checking if logs haven't changed for a while
-            if (data.logs.length === previousLogLength) {
-              consecutiveSameLogCount++;
-              // If logs haven't changed for 3 consecutive checks, consider it completed
-              if (consecutiveSameLogCount >= 3) {
-                console.log("Operation appears to be complete (logs unchanged)");
-                setOperationStatus('success');
-                if (pollingInterval) clearTimeout(pollingInterval);
-                return;
-              }
-            } else {
-              consecutiveSameLogCount = 0;
-              previousLogLength = data.logs.length;
-            }
-            
-            // If not complete, schedule another fetch
-            pollingInterval = window.setTimeout(fetchLogs, 3000); // Poll every 3 seconds
-          }
-        } else {
-          console.error("Failed to fetch logs:", await response.text());
-          // If we can't get logs after a few tries, stop polling
-          consecutiveSameLogCount++;
-          if (consecutiveSameLogCount >= 3) {
-            setOperationStatus('failed');
-            if (pollingInterval) clearTimeout(pollingInterval);
-          } else {
-            pollingInterval = window.setTimeout(fetchLogs, 3000);
-          }
-        }
-      } catch (error) {
-        console.error("Error fetching logs:", error);
-        // Error handling - still try a few times
-        consecutiveSameLogCount++;
-        if (consecutiveSameLogCount >= 3) {
+  // Fetch logs for a deployment
+  const fetchLogs = async (id: string) => {
+    if (!id) return;
+    
+    try {
+      const response = await fetch(`/api/deploy/${id}/logs`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch logs');
+      }
+      
+      const data = await response.json();
+      if (data && data.logs) {
+        // Only show relevant logs for systemctl operations
+        const relevantLogs = data.logs.filter((log: string) => 
+          !log.includes('PLAY RECAP') && 
+          !log.includes('TASK [Gathering Facts]') && 
+          !log.includes('PLAY [Run systemd commands]') &&
+          !log.includes('ok=')
+        );
+        
+        setLogs(relevantLogs);
+        
+        // Update status based on response
+        if (data.status === 'completed' || data.status === 'success') {
+          setOperationStatus('success');
+        } else if (data.status === 'failed') {
           setOperationStatus('failed');
-          if (pollingInterval) clearTimeout(pollingInterval);
-        } else {
-          pollingInterval = window.setTimeout(fetchLogs, 3000);
+        } else if (data.status === 'running') {
+          // If still running, schedule another check
+          setTimeout(() => fetchLogs(id), 2000);
         }
       }
-    };
-    
-    fetchLogs();
-    
-    // Cleanup timeout on component unmount
-    return () => {
-      if (pollingInterval) clearTimeout(pollingInterval);
-    };
+    } catch (error) {
+      console.error('Error fetching logs:', error);
+      setOperationStatus('failed');
+    }
+  };
+
+  // Start fetching logs when deploymentId is available
+  useEffect(() => {
+    if (deploymentId) {
+      fetchLogs(deploymentId);
+    }
   }, [deploymentId]);
 
   const handleExecute = () => {
