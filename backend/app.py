@@ -12,11 +12,20 @@ import re
 from logging.handlers import RotatingFileHandler
 from werkzeug.utils import secure_filename
 from datetime import datetime, timedelta
+#from routes.db_routes import db_routes
+# Import DB routes
 from routes.db_routes import db_routes
+
+# Register the blueprint
+#app.register_blueprint(db_blueprint, url_prefix='/api')
+
 
 app = Flask(__name__, static_folder='../frontend/dist')
 
-app.register_blueprint(db_routes)
+# Register the blueprint
+app.register_blueprint(db_routes, url_prefix='/api')
+
+#app.register_blueprint(db_routes)
 
 # Directory where fix files are stored
 FIX_FILES_DIR = os.environ.get('FIX_FILES_DIR', '/app/fixfiles')
