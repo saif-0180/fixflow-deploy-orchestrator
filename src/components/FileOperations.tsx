@@ -78,7 +78,11 @@ const FileOperations: React.FC = () => {
   });
 
   // Fetch recent file deployments for rollback (new query)
-  const { data: recentFileDeployments = [] } = useQuery({
+
+  const {
+    data: recentFileDeployments = [],
+    refetch: refetchRecentFileDeployments,
+  } = useQuery({
     queryKey: ['recent-file-deployments'],
     queryFn: async () => {
       try {
@@ -88,9 +92,11 @@ const FileOperations: React.FC = () => {
           return [];
         }
         const data = await response.json();
-        return data.filter((deployment: any) => 
-          deployment.type === 'file' && deployment.status === 'success'
-        ).slice(0, 10); // Get last 10 successful file deployments
+        return data
+          .filter((deployment: any) => 
+            deployment.type === 'file' && deployment.status === 'success'
+          )
+          .slice(0, 10); // Get last 10 successful file deployments
       } catch (error) {
         console.error('Error fetching recent deployments:', error);
         return [];
@@ -99,6 +105,27 @@ const FileOperations: React.FC = () => {
     refetchOnWindowFocus: false,
     staleTime: 300000, // 5 minutes
   });
+  // const { data: recentFileDeployments = [] } = useQuery({
+  //   queryKey: ['recent-file-deployments'],
+  //   queryFn: async () => {
+  //     try {
+  //       const response = await fetch('/api/deployments/files/recent');
+  //       if (!response.ok) {
+  //         console.error(`Failed to fetch recent deployments: ${await response.text()}`);
+  //         return [];
+  //       }
+  //       const data = await response.json();
+  //       return data.filter((deployment: any) => 
+  //         deployment.type === 'file' && deployment.status === 'success'
+  //       ).slice(0, 10); // Get last 10 successful file deployments
+  //     } catch (error) {
+  //       console.error('Error fetching recent deployments:', error);
+  //       return [];
+  //     }
+  //   },
+  //   refetchOnWindowFocus: false,
+  //   staleTime: 300000, // 5 minutes
+  // });
   
   // Update lastDeployments when recentFileDeployments changes
   useEffect(() => {
@@ -616,6 +643,7 @@ const FileOperations: React.FC = () => {
                   onValueChange={setSelectedRollbackId}
                   disabled={lastDeployments.length === 0}
                 >
+                <Select onOpenChange={(open) => open && refetchDeployments()}></Select>
                   <SelectTrigger id="rollback-select" className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]">
                     <SelectValue placeholder="Select a deployment" className="text-[#2A4759]" />
                   </SelectTrigger>

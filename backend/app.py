@@ -832,39 +832,365 @@ def process_shell_command(deployment_id):
         save_deployment_history()
 
 # API to get deployment history
+
 @app.route('/api/deployments/history')
 def get_deployment_history():
-    logger.info("Getting deployment history")
+    try:
+        logger.info("=== START: Getting deployment history ===")
+        logger.debug(f"Request method: {request.method}")
+        logger.debug(f"Request headers: {dict(request.headers)}")
+        logger.debug(f"Request args: {request.args}")
+        
+        # Log deployments variable state
+        logger.debug(f"Deployments variable exists: {deployments is not None}")
+        logger.debug(f"Deployments type: {type(deployments)}")
+        logger.debug(f"Deployments length: {len(deployments) if deployments else 0}")
+        logger.debug(f"Deployments keys: {list(deployments.keys()) if deployments else []}")
+        
+        # Check if deployments is empty, try to reload from file
+        if not deployments:
+            logger.info("Deployments dictionary is empty, attempting to reload from file")
+            try:
+                logger.debug(f"Checking if history file exists: {DEPLOYMENT_HISTORY_FILE}")
+                logger.debug(f"File exists: {os.path.exists(DEPLOYMENT_HISTORY_FILE)}")
+                
+                if os.path.exists(DEPLOYMENT_HISTORY_FILE):
+                    with open(DEPLOYMENT_HISTORY_FILE, 'r') as f:
+                        loaded_deployments = json.load(f)
+                        logger.debug(f"Loaded deployments type: {type(loaded_deployments)}")
+                        logger.debug(f"Loaded deployments length: {len(loaded_deployments) if loaded_deployments else 0}")
+                        
+                        if loaded_deployments:
+                            # Update global deployments dictionary
+                            deployments.clear()
+                            deployments.update(loaded_deployments)
+                            logger.info(f"Successfully reloaded {len(deployments)} deployments from history file")
+                        else:
+                            logger.warning("Loaded deployments is empty or None")
+                else:
+                    logger.warning(f"Deployment history file does not exist: {DEPLOYMENT_HISTORY_FILE}")
+            except json.JSONDecodeError as e:
+                logger.error(f"JSON decode error when loading deployment history: {str(e)}")
+                logger.error(f"Error line: {e.lineno}, column: {e.colno}")
+            except Exception as e:
+                logger.error(f"Failed to reload deployment history: {str(e)}")
+                import traceback
+                logger.error(f"Full traceback: {traceback.format_exc()}")
+        
+        # Log current deployments state before processing
+        logger.debug(f"Final deployments count before processing: {len(deployments)}")
+        
+        # Get deployment values and normalize timestamps
+        logger.debug("Starting deployment processing...")
+        deployment_values = list(deployments.values())
+        logger.debug(f"Deployment values count: {len(deployment_values)}")
+        
+        # Normalize timestamps to consistent format (float/unix timestamp)
+        for i, d in enumerate(deployment_values):
+            original_timestamp = d.get("timestamp", 0)
+            logger.debug(f"Processing deployment {i}: original timestamp={original_timestamp} (type: {type(original_timestamp)})")
+            
+            try:
+                # Convert timestamp to float (unix timestamp) for consistent sorting
+                if isinstance(original_timestamp, str):
+                    # Try to parse string timestamp
+                    try:
+                        # Try ISO format first
+                        from datetime import datetime
+                        dt = datetime.fromisoformat(original_timestamp.replace('Z', '+00:00'))
+                        normalized_timestamp = dt.timestamp()
+                        logger.debug(f"Converted ISO string timestamp to float: {normalized_timestamp}")
+                    except ValueError:
+                        try:
+                            # Try other common formats
+                            dt = datetime.strptime(original_timestamp, '%Y-%m-%dT%H:%M:%S')
+                            normalized_timestamp = dt.timestamp()
+                            logger.debug(f"Converted string timestamp to float: {normalized_timestamp}")
+                        except ValueError:
+                            # If parsing fails, try to convert directly to float
+                            try:
+                                normalized_timestamp = float(original_timestamp)
+                                logger.debug(f"Converted string to float directly: {normalized_timestamp}")
+                            except ValueError:
+                                logger.warning(f"Could not parse timestamp '{original_timestamp}', using current time")
+                                normalized_timestamp = time.time()
+                elif isinstance(original_timestamp, (int, float)):
+                    normalized_timestamp = float(original_timestamp)
+                    logger.debug(f"Timestamp already numeric: {normalized_timestamp}")
+                else:
+                    logger.warning(f"Unknown timestamp type: {type(original_timestamp)}, using current time")
+                    normalized_timestamp = time.time()
+                
+                # Store normalized timestamp for sorting
+                d["_sort_timestamp"] = normalized_timestamp
+                
+            except Exception as e:
+                logger.error(f"Error processing timestamp for deployment {i}: {str(e)}")
+                d["_sort_timestamp"] = time.time()  # Default fallback
+        
+        # Sort deployments by normalized timestamp, newest first
+        logger.debug("Starting deployment sorting...")
+        sorted_deployments = sorted(
+            deployment_values,
+            key=lambda x: x.get("_sort_timestamp", 0),
+            reverse=True
+        )
+        logger.debug(f"Sorted deployments count: {len(sorted_deployments)}")
+        
+        # Convert timestamps to ISO format for API response and clean up sort field
+        logger.debug("Converting timestamps for API response...")
+        for i, d in enumerate(sorted_deployments):
+            sort_timestamp = d.get("_sort_timestamp", 0)
+            
+            try:
+                # Convert to ISO format for API response
+                d["timestamp"] = time.strftime('%Y-%m-%dT%H:%M:%S', time.localtime(sort_timestamp))
+                logger.debug(f"Final timestamp for deployment {i}: {d['timestamp']}")
+            except Exception as e:
+                logger.error(f"Error converting timestamp for deployment {i}: {str(e)}")
+                d["timestamp"] = "1970-01-01T00:00:00"  # Default fallback
+            
+            # Remove the temporary sort field
+            if "_sort_timestamp" in d:
+                del d["_sort_timestamp"]
+            
+            # Ensure logs field is present
+            if "logs" not in d:
+                d["logs"] = []
+                logger.debug(f"Added empty logs array to deployment {i}")
+            else:
+                logger.debug(f"Deployment {i} already has {len(d.get('logs', []))} log entries")
+        
+        logger.info(f"Successfully processed {len(sorted_deployments)} deployments")
+        logger.debug("=== END: Getting deployment history ===")
+        
+        return jsonify(sorted_deployments)
+        
+    except Exception as e:
+        import traceback
+        logger.error("=== CRITICAL ERROR in get_deployment_history ===")
+        logger.error(f"Error type: {type(e).__name__}")
+        logger.error(f"Error message: {str(e)}")
+        logger.error(f"Full traceback:\n{traceback.format_exc()}")
+        logger.error("=== END CRITICAL ERROR ===")
+        
+        # Return JSON error response
+        return jsonify({
+            "error": "Internal server error",
+            "details": str(e),
+            "type": type(e).__name__
+        }), 500
+
+# @app.route('/api/deployments/history')
+# def get_deployment_history():
+#     try:
+#         logger.info("=== START: Getting deployment history ===")
+#         logger.debug(f"Request method: {request.method}")
+#         logger.debug(f"Request headers: {dict(request.headers)}")
+#         logger.debug(f"Request args: {request.args}")
+        
+#         # Log deployments variable state
+#         logger.debug(f"Deployments variable exists: {deployments is not None}")
+#         logger.debug(f"Deployments type: {type(deployments)}")
+#         logger.debug(f"Deployments length: {len(deployments) if deployments else 0}")
+#         logger.debug(f"Deployments keys: {list(deployments.keys()) if deployments else []}")
+        
+#         # Check if deployments is empty, try to reload from file
+#         if not deployments:
+#             logger.info("Deployments dictionary is empty, attempting to reload from file")
+#             try:
+#                 logger.debug(f"Checking if history file exists: {DEPLOYMENT_HISTORY_FILE}")
+#                 logger.debug(f"File exists: {os.path.exists(DEPLOYMENT_HISTORY_FILE)}")
+                
+#                 if os.path.exists(DEPLOYMENT_HISTORY_FILE):
+#                     logger.debug(f"File size: {os.path.getsize(DEPLOYMENT_HISTORY_FILE)} bytes")
+#                     logger.debug(f"File permissions: {oct(os.stat(DEPLOYMENT_HISTORY_FILE).st_mode)}")
+                    
+#                     with open(DEPLOYMENT_HISTORY_FILE, 'r') as f:
+#                         logger.debug("Reading deployment history file...")
+#                         file_content = f.read()
+#                         logger.debug(f"File content length: {len(file_content)} characters")
+#                         logger.debug(f"File content preview: {file_content[:200]}...")
+                        
+#                         # Reset file pointer and parse JSON
+#                         f.seek(0)
+#                         loaded_deployments = json.load(f)
+#                         logger.debug(f"Loaded deployments type: {type(loaded_deployments)}")
+#                         logger.debug(f"Loaded deployments length: {len(loaded_deployments) if loaded_deployments else 0}")
+                        
+#                         if loaded_deployments:
+#                             # Update global deployments dictionary
+#                             deployments.clear()
+#                             deployments.update(loaded_deployments)
+#                             logger.info(f"Successfully reloaded {len(deployments)} deployments from history file")
+#                             for dep_id, dep_data in list(deployments.items())[:3]:  # Log first 3 deployments
+#                                 logger.debug(f"Deployment {dep_id}: {dep_data.get('status', 'unknown')} - {dep_data.get('timestamp', 'no timestamp')}")
+#                         else:
+#                             logger.warning("Loaded deployments is empty or None")
+#                 else:
+#                     logger.warning(f"Deployment history file does not exist: {DEPLOYMENT_HISTORY_FILE}")
+#             except json.JSONDecodeError as e:
+#                 logger.error(f"JSON decode error when loading deployment history: {str(e)}")
+#                 logger.error(f"Error line: {e.lineno}, column: {e.colno}")
+#             except Exception as e:
+#                 logger.error(f"Failed to reload deployment history: {str(e)}")
+#                 import traceback
+#                 logger.error(f"Full traceback: {traceback.format_exc()}")
+        
+#         # Log current deployments state before processing
+#         logger.debug(f"Final deployments count before processing: {len(deployments)}")
+        
+#         # Sort deployments by timestamp, newest first
+#         logger.debug("Starting deployment sorting...")
+#         deployment_values = list(deployments.values())
+#         logger.debug(f"Deployment values count: {len(deployment_values)}")
+        
+#         for i, d in enumerate(deployment_values[:3]):  # Log first 3 deployments
+#             logger.debug(f"Deployment {i}: timestamp={d.get('timestamp', 'missing')}, status={d.get('status', 'missing')}")
+        
+#         sorted_deployments = sorted(
+#             deployment_values,
+#             key=lambda x: x.get("timestamp", 0),
+#             reverse=True
+#         )
+#         logger.debug(f"Sorted deployments count: {len(sorted_deployments)}")
+        
+#         # Convert timestamp to ISO format and ensure all required fields are present
+#         logger.debug("Processing deployment timestamps...")
+#         for i, d in enumerate(sorted_deployments):
+#             original_timestamp = d.get("timestamp", 0)
+#             logger.debug(f"Processing deployment {i}: original timestamp={original_timestamp}")
+            
+#             try:
+#                 d["timestamp"] = time.strftime('%Y-%m-%dT%H:%M:%S', time.localtime(original_timestamp))
+#                 logger.debug(f"Converted timestamp to: {d['timestamp']}")
+#             except Exception as e:
+#                 logger.error(f"Error converting timestamp for deployment {i}: {str(e)}")
+#                 d["timestamp"] = "1970-01-01T00:00:00"  # Default fallback
+            
+#             # Ensure logs field is present
+#             if "logs" not in d:
+#                 d["logs"] = []
+#                 logger.debug(f"Added empty logs array to deployment {i}")
+#             else:
+#                 logger.debug(f"Deployment {i} already has {len(d.get('logs', []))} log entries")
+        
+#         logger.info(f"Successfully processed {len(sorted_deployments)} deployments")
+#         logger.debug("=== END: Getting deployment history ===")
+        
+#         return jsonify(sorted_deployments)
+        
+#     except Exception as e:
+#         import traceback
+#         logger.error("=== CRITICAL ERROR in get_deployment_history ===")
+#         logger.error(f"Error type: {type(e).__name__}")
+#         logger.error(f"Error message: {str(e)}")
+#         logger.error(f"Full traceback:\n{traceback.format_exc()}")
+#         logger.error("=== END CRITICAL ERROR ===")
+        
+#         # Return JSON error response
+#         return jsonify({
+#             "error": "Internal server error",
+#             "details": str(e),
+#             "type": type(e).__name__
+#         }), 500
+# @app.route('/api/deployments/history')
+# def get_deployment_history():
+#     logger.info("Getting deployment history")
     
-    # Check if deployments is empty, try to reload from file
-    if not deployments:
-        try:
-            if os.path.exists(DEPLOYMENT_HISTORY_FILE):
-                with open(DEPLOYMENT_HISTORY_FILE, 'r') as f:
-                    loaded_deployments = json.load(f)
-                    if loaded_deployments:
-                        # Update global deployments dictionary
-                        deployments.clear()
-                        deployments.update(loaded_deployments)
-                        logger.info(f"Reloaded {len(deployments)} deployments from history file")
-        except Exception as e:
-            logger.error(f"Failed to reload deployment history: {str(e)}")
+#     # Check if deployments is empty, try to reload from file
+#     if not deployments:
+#         try:
+#             if os.path.exists(DEPLOYMENT_HISTORY_FILE):
+#                 with open(DEPLOYMENT_HISTORY_FILE, 'r') as f:
+#                     loaded_deployments = json.load(f)
+#                     if loaded_deployments:
+#                         # Update global deployments dictionary
+#                         deployments.clear()
+#                         deployments.update(loaded_deployments)
+#                         logger.info(f"Reloaded {len(deployments)} deployments from history file")
+#         except Exception as e:
+#             logger.error(f"Failed to reload deployment history: {str(e)}")
     
-    # Sort deployments by timestamp, newest first
-    sorted_deployments = sorted(
-        [d for d in deployments.values()],
-        key=lambda x: x.get("timestamp", 0),
-        reverse=True
-    )
+#     # Sort deployments by timestamp, newest first
+#     sorted_deployments = sorted(
+#         [d for d in deployments.values()],
+#         key=lambda x: x.get("timestamp", 0),
+#         reverse=True
+#     )
     
-    # Convert timestamp to ISO format and ensure all required fields are present
-    for d in sorted_deployments:
-        d["timestamp"] = time.strftime('%Y-%m-%dT%H:%M:%S', time.localtime(d.get("timestamp", 0)))
-        # Ensure logs field is present
-        if "logs" not in d:
-            d["logs"] = []
+#     # Convert timestamp to ISO format and ensure all required fields are present
+#     for d in sorted_deployments:
+#         d["timestamp"] = time.strftime('%Y-%m-%dT%H:%M:%S', time.localtime(d.get("timestamp", 0)))
+#         # Ensure logs field is present
+#         if "logs" not in d:
+#             d["logs"] = []
     
-    return jsonify(sorted_deployments)
+#     return jsonify(sorted_deployments)
+
+# API to get logs for a specific deployment
+
+@app.route('/api/deployments/files/recent', methods=['GET'])
+def get_recent_file_deployments():
+    """Get recent successful file deployments for rollback purposes"""
+    try:
+        logger.info("Fetching recent file deployments")
+        
+        # Filter and sort deployments
+        file_deployments = []
+        
+        for deployment_id, deployment in deployments.items():
+            # Only include successful file deployments
+            if (deployment.get("type") == "file" and 
+                deployment.get("status") == "success"):
+                
+                # Ensure timestamp is properly formatted
+                timestamp = deployment.get("timestamp")
+                if isinstance(timestamp, (int, float)):
+                    # Convert to ISO format for consistent frontend handling
+                    deployment_copy = deployment.copy()
+                    deployment_copy["timestamp"] = datetime.fromtimestamp(timestamp).isoformat()
+                elif isinstance(timestamp, str):
+                    # Keep string timestamps as-is (should already be ISO format)
+                    deployment_copy = deployment.copy()
+                else:
+                    # Fallback for missing/invalid timestamps
+                    deployment_copy = deployment.copy()
+                    deployment_copy["timestamp"] = datetime.now().isoformat()
+                
+                file_deployments.append(deployment_copy)
+        
+        # Sort by timestamp (most recent first)
+        # Convert timestamps to floats for sorting
+        for deployment in file_deployments:
+            timestamp_str = deployment["timestamp"]
+            try:
+                if 'T' in timestamp_str:
+                    # ISO format
+                    dt = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                    deployment["_sort_timestamp"] = dt.timestamp()
+                else:
+                    # Assume it's already a timestamp string
+                    deployment["_sort_timestamp"] = float(timestamp_str)
+            except (ValueError, TypeError):
+                # Fallback to current time for invalid timestamps
+                deployment["_sort_timestamp"] = time.time()
+        
+        # Sort by the normalized timestamp
+        file_deployments.sort(key=lambda x: x["_sort_timestamp"], reverse=True)
+        
+        # Remove the temporary sorting field and limit to 10 most recent
+        recent_deployments = []
+        for deployment in file_deployments[:10]:
+            deployment.pop("_sort_timestamp", None)
+            recent_deployments.append(deployment)
+        
+        logger.info(f"Found {len(recent_deployments)} recent file deployments")
+        return jsonify(recent_deployments)
+        
+    except Exception as e:
+        logger.error(f"Error fetching recent file deployments: {str(e)}")
+        return jsonify({"error": "Failed to fetch recent deployments"}), 500
 
 # API to get logs for a specific deployment
 @app.route('/api/deploy/<deployment_id>/logs')
@@ -1021,9 +1347,9 @@ def rollback_deployment(deployment_id):
     logger.info(f"Rollback initiated with ID: {rollback_id}")
     return jsonify({"deploymentId": rollback_id})
 
+    
 def process_rollback(rollback_id):
     rollback = deployments[rollback_id]
-    
     try:
         original_id = rollback["original_deployment"]
         vms = rollback["vms"]
@@ -1033,18 +1359,27 @@ def process_rollback(rollback_id):
         
         log_message(rollback_id, f"Starting rollback for deployment {original_id}")
         
-        # Find most recent backup for each VM
+        # Get current timestamp for backup naming
+        timestamp = int(time.time())
+        
+        # Track overall rollback success
+        overall_success = True
+        failed_vms = []
+        
+        # Process rollback for each VM
         for vm_name in vms:
             vm = next((v for v in inventory["vms"] if v["name"] == vm_name), None)
             if not vm:
                 log_message(rollback_id, f"ERROR: VM {vm_name} not found in inventory")
+                failed_vms.append(vm_name)
+                overall_success = False
                 continue
-                
-            # Generate playbook for finding and restoring backup
+            
+            # Generate rollback playbook
             playbook_file = f"/tmp/rollback_{rollback_id}_{vm_name}.yml"
             with open(playbook_file, 'w') as f:
                 f.write(f"""---
-- name: Rollback file deployment
+- name: Rollback file deployment (backup and remove)
   hosts: {vm_name}
   gather_facts: false
   become: {"true" if sudo else "false"}
@@ -1052,45 +1387,52 @@ def process_rollback(rollback_id):
   tasks:
     - name: Test connection
       ping:
-      
-    - name: Find backup files
-      ansible.builtin.find:
-        paths: "{os.path.dirname(target_path)}"
-        patterns: "{os.path.basename(target_path)}.bak.*"
-      register: backup_files
-      
-    - name: Set fact for newest backup
-      ansible.builtin.set_fact:
-        newest_backup: "{{ backup_files.files | sort(attribute='mtime') | last }}"
-      when: backup_files.matched > 0
-      
-    - name: Restore from backup
+    
+    - name: Check if target file exists
+      ansible.builtin.stat:
+        path: "{target_path}"
+      register: target_file_stat
+    
+    - name: Create backup of current file
       ansible.builtin.copy:
-        src: "{{ newest_backup.path }}"
-        dest: "{target_path}"
+        src: "{target_path}"
+        dest: "{target_path}_{timestamp}"
         remote_src: yes
-      when: backup_files.matched > 0
-      register: restore_result
-      
-    - name: Log restore result
+        backup: no
+      when: target_file_stat.stat.exists
+      register: backup_result
+    
+    - name: Log backup creation
       ansible.builtin.debug:
-        msg: "Restored {{ newest_backup.path }} to {target_path}"
-      when: backup_files.matched > 0 and restore_result.changed
-      
-    - name: No backups found
+        msg: "Created backup: {target_path}_{timestamp}"
+      when: target_file_stat.stat.exists and backup_result.changed
+    
+    - name: Remove original file (rollback)
+      ansible.builtin.file:
+        path: "{target_path}"
+        state: absent
+      when: target_file_stat.stat.exists
+      register: remove_result
+    
+    - name: Log file removal
       ansible.builtin.debug:
-        msg: "No backup files found for {target_path}"
-      when: backup_files.matched == 0
+        msg: "Removed original file: {target_path}"
+      when: target_file_stat.stat.exists and remove_result.changed
+    
+    - name: File not found
+      ansible.builtin.debug:
+        msg: "Target file {target_path} does not exist - nothing to rollback"
+      when: not target_file_stat.stat.exists
 """)
-                
+            
             # Generate inventory file
             inventory_file = f"/tmp/rollback_inventory_{rollback_id}_{vm_name}"
             with open(inventory_file, 'w') as f:
                 f.write(f"{vm_name} ansible_host={vm['ip']} ansible_user=infadm ansible_ssh_private_key_file=/root/.ssh/id_rsa ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ControlMaster=auto -o ControlPath=/tmp/ansible-ssh/%h-%p-%r -o ControlPersist=60s'")
-                
+            
             # Run ansible playbook
             cmd = ["ansible-playbook", "-i", inventory_file, playbook_file, "-v"]
-            log_message(rollback_id, f"Running rollback on {vm_name}")
+            log_message(rollback_id, f"Running rollback on {vm_name}: backup and remove {target_path}")
             
             env_vars = os.environ.copy()
             env_vars["ANSIBLE_CONFIG"] = "/etc/ansible/ansible.cfg"
@@ -1102,24 +1444,35 @@ def process_rollback(rollback_id):
             
             for line in process.stdout:
                 log_message(rollback_id, line.strip())
-                
+            
             process.wait()
             
             if process.returncode == 0:
                 log_message(rollback_id, f"Rollback completed successfully on {vm_name}")
+                log_message(rollback_id, f"File backed up as: {target_path}_{timestamp}")
             else:
-                log_message(rollback_id, f"Rollback failed on {vm_name}")
-                
-            # Cleanup
+                log_message(rollback_id, f"FAILED: Rollback failed on {vm_name} (exit code: {process.returncode})")
+                failed_vms.append(vm_name)
+                overall_success = False
+            
+            # Cleanup temporary files
             try:
                 os.remove(playbook_file)
                 os.remove(inventory_file)
-            except:
-                pass
-                
-        # Update rollback status
-        deployments[rollback_id]["status"] = "success"
-        log_message(rollback_id, "Rollback operation completed")
+            except Exception as cleanup_error:
+                log_message(rollback_id, f"Warning: Could not cleanup temp files: {str(cleanup_error)}")
+        
+        # Update rollback status based on overall success
+        if overall_success:
+            deployments[rollback_id]["status"] = "success"
+            deployments[rollback_id]["backup_timestamp"] = timestamp
+            log_message(rollback_id, f"Rollback operation completed successfully on all VMs. Files backed up with timestamp: {timestamp}")
+        else:
+            deployments[rollback_id]["status"] = "failed"
+            if failed_vms:
+                log_message(rollback_id, f"Rollback FAILED on VMs: {', '.join(failed_vms)}")
+            log_message(rollback_id, "Rollback operation completed with failures")
+        
         save_deployment_history()
         
     except Exception as e:
@@ -1127,6 +1480,112 @@ def process_rollback(rollback_id):
         deployments[rollback_id]["status"] = "failed"
         logger.exception(f"Exception in rollback {rollback_id}: {str(e)}")
         save_deployment_history()
+# def process_rollback(rollback_id):
+#     rollback = deployments[rollback_id]
+    
+#     try:
+#         original_id = rollback["original_deployment"]
+#         vms = rollback["vms"]
+#         target_path = os.path.join(rollback["target_path"], rollback["file"])
+#         user = rollback["user"]
+#         sudo = rollback["sudo"]
+        
+#         log_message(rollback_id, f"Starting rollback for deployment {original_id}")
+        
+#         # Find most recent backup for each VM
+#         for vm_name in vms:
+#             vm = next((v for v in inventory["vms"] if v["name"] == vm_name), None)
+#             if not vm:
+#                 log_message(rollback_id, f"ERROR: VM {vm_name} not found in inventory")
+#                 continue
+                
+#             # Generate playbook for finding and restoring backup
+#             playbook_file = f"/tmp/rollback_{rollback_id}_{vm_name}.yml"
+#             with open(playbook_file, 'w') as f:
+#                 f.write(f"""---
+# - name: Rollback file deployment
+#   hosts: {vm_name}
+#   gather_facts: false
+#   become: {"true" if sudo else "false"}
+#   become_user: {user}
+#   tasks:
+#     - name: Test connection
+#       ping:
+      
+#     - name: Find backup files
+#       ansible.builtin.find:
+#         paths: "{os.path.dirname(target_path)}"
+#         patterns: "{os.path.basename(target_path)}.bak.*"
+#       register: backup_files
+      
+#     - name: Set fact for newest backup
+#       ansible.builtin.set_fact:
+#         newest_backup: "{{ backup_files.files | sort(attribute='mtime') | last }}"
+#       when: backup_files.matched > 0
+      
+#     - name: Restore from backup
+#       ansible.builtin.copy:
+#         src: "{{ newest_backup.path }}"
+#         dest: "{target_path}"
+#         remote_src: yes
+#       when: backup_files.matched > 0
+#       register: restore_result
+      
+#     - name: Log restore result
+#       ansible.builtin.debug:
+#         msg: "Restored {{ newest_backup.path }} to {target_path}"
+#       when: backup_files.matched > 0 and restore_result.changed
+      
+#     - name: No backups found
+#       ansible.builtin.debug:
+#         msg: "No backup files found for {target_path}"
+#       when: backup_files.matched == 0
+# """)
+                
+#             # Generate inventory file
+#             inventory_file = f"/tmp/rollback_inventory_{rollback_id}_{vm_name}"
+#             with open(inventory_file, 'w') as f:
+#                 f.write(f"{vm_name} ansible_host={vm['ip']} ansible_user=infadm ansible_ssh_private_key_file=/root/.ssh/id_rsa ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ControlMaster=auto -o ControlPath=/tmp/ansible-ssh/%h-%p-%r -o ControlPersist=60s'")
+                
+#             # Run ansible playbook
+#             cmd = ["ansible-playbook", "-i", inventory_file, playbook_file, "-v"]
+#             log_message(rollback_id, f"Running rollback on {vm_name}")
+            
+#             env_vars = os.environ.copy()
+#             env_vars["ANSIBLE_CONFIG"] = "/etc/ansible/ansible.cfg"
+#             env_vars["ANSIBLE_HOST_KEY_CHECKING"] = "False"
+#             env_vars["ANSIBLE_SSH_CONTROL_PATH"] = "/tmp/ansible-ssh/%h-%p-%r"
+#             env_vars["ANSIBLE_SSH_CONTROL_PATH_DIR"] = "/tmp/ansible-ssh"
+            
+#             process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env_vars)
+            
+#             for line in process.stdout:
+#                 log_message(rollback_id, line.strip())
+                
+#             process.wait()
+            
+#             if process.returncode == 0:
+#                 log_message(rollback_id, f"Rollback completed successfully on {vm_name}")
+#             else:
+#                 log_message(rollback_id, f"Rollback failed on {vm_name}")
+                
+#             # Cleanup
+#             try:
+#                 os.remove(playbook_file)
+#                 os.remove(inventory_file)
+#             except:
+#                 pass
+                
+#         # Update rollback status
+#         deployments[rollback_id]["status"] = "success"
+#         log_message(rollback_id, "Rollback operation completed")
+#         save_deployment_history()
+        
+#     except Exception as e:
+#         log_message(rollback_id, f"ERROR: Exception during rollback: {str(e)}")
+#         deployments[rollback_id]["status"] = "failed"
+#         logger.exception(f"Exception in rollback {rollback_id}: {str(e)}")
+#         save_deployment_history()
 
 # API to clear deployment history
 @app.route('/api/deployments/clear', methods=['POST'])
