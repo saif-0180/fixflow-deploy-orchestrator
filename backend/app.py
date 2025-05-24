@@ -35,14 +35,21 @@ DEPLOYMENT_LOGS_DIR = os.environ.get('DEPLOYMENT_LOGS_DIR', '/app/logs')
 APP_LOG_FILE = os.environ.get('APP_LOG_FILE', os.path.join(DEPLOYMENT_LOGS_DIR, 'application.log'))
 DEPLOYMENT_HISTORY_FILE = os.path.join(DEPLOYMENT_LOGS_DIR, 'deployment_history.json')
 
-# Create logs directory if it doesn't exist
-os.makedirs(DEPLOYMENT_LOGS_DIR, exist_ok=True)
-os.makedirs('/tmp/ansible-ssh', exist_ok=True)  # Ensure ansible control path directory exists
-os.chmod('/tmp/ansible-ssh', 0o777)  # Set proper permissions for ansible control path
 
 # Configure application logging
 logger = logging.getLogger('fix_deployment_orchestrator')
 logger.setLevel(logging.DEBUG)
+# Create logs directory if it doesn't exist
+os.makedirs(DEPLOYMENT_LOGS_DIR, exist_ok=True)
+os.makedirs('/tmp/ansible-ssh', exist_ok=True)  # Ensure ansible control path directory exists
+# os.chmod('/tmp/ansible-ssh', 0o777)  # Set proper permissions for ansible control path
+
+try:
+    os.chmod('/tmp/ansible-ssh', 0o777)  # Set proper permissions for ansible control path
+except PermissionError:
+    logger.info("Could not set permissions on /tmp/ansible-ssh - continuing with existing permissions")
+
+
 
 # Console handler
 console_handler = logging.StreamHandler()
@@ -143,8 +150,19 @@ def save_inventory():
         logger.error(f"Error saving inventory: {str(e)}")
 
 # Function to save deployment history with backup
+
 def save_deployment_history():
     try:
+        logger.info(f"Starting to save deployment history. Current deployments count: {len(deployments)}")
+        
+        # Ensure the deployment logs directory exists
+        try:
+            os.makedirs(DEPLOYMENT_LOGS_DIR, exist_ok=True)
+            logger.debug(f"Ensured directory exists: {DEPLOYMENT_LOGS_DIR}")
+        except Exception as e:
+            logger.error(f"Failed to create DEPLOYMENT_LOGS_DIR: {e}")
+            raise
+        
         # Create a backup of the current history file if it exists
         if os.path.exists(DEPLOYMENT_HISTORY_FILE):
             timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
@@ -156,23 +174,70 @@ def save_deployment_history():
                 logger.debug(f"Created backup of deployment history: {backup_file}")
             except Exception as e:
                 logger.error(f"Error creating backup of history file: {str(e)}")
+                # Don't raise here, continue with saving
+        
+        # Ensure the directory for the main history file exists
+        history_dir = os.path.dirname(DEPLOYMENT_HISTORY_FILE)
+        if history_dir:
+            os.makedirs(history_dir, exist_ok=True)
         
         # Save the current deployment history
-        with open(DEPLOYMENT_HISTORY_FILE, 'w') as f:
-            json.dump(deployments, f)
-        logger.info(f"Saved {len(deployments)} deployments to history file")
+        try:
+            with open(DEPLOYMENT_HISTORY_FILE, 'w') as f:
+                json.dump(deployments, f, default=str, indent=2)
+            logger.info(f"Saved {len(deployments)} deployments to history file: {DEPLOYMENT_HISTORY_FILE}")
+        except Exception as e:
+            logger.error(f"Failed to write deployment history file: {e}")
+            raise
         
         # Clean up old backup files (keep only last 10)
-        backup_files = sorted(glob.glob(os.path.join(DEPLOYMENT_LOGS_DIR, 'deployment_history_*.json')))
-        if len(backup_files) > 10:
-            for old_file in backup_files[:-10]:
-                try:
-                    os.remove(old_file)
-                    logger.debug(f"Removed old backup file: {old_file}")
-                except Exception as e:
-                    logger.error(f"Error removing old backup file {old_file}: {str(e)}")
+        try:
+            backup_files = sorted(glob.glob(os.path.join(DEPLOYMENT_LOGS_DIR, 'deployment_history_*.json')))
+            if len(backup_files) > 10:
+                for old_file in backup_files[:-10]:
+                    try:
+                        os.remove(old_file)
+                        logger.debug(f"Removed old backup file: {old_file}")
+                    except Exception as e:
+                        logger.error(f"Error removing old backup file {old_file}: {str(e)}")
+        except Exception as e:
+            logger.error(f"Error during backup cleanup: {e}")
+            # Don't raise here, the main save was successful
+            
     except Exception as e:
         logger.error(f"Failed to save deployment history: {str(e)}")
+        raise  # Re-raise so the API returns 500
+
+# def save_deployment_history():
+#     try:
+#         # Create a backup of the current history file if it exists
+#         if os.path.exists(DEPLOYMENT_HISTORY_FILE):
+#             timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+#             backup_file = os.path.join(DEPLOYMENT_LOGS_DIR, f'deployment_history_{timestamp}.json')
+#             try:
+#                 with open(DEPLOYMENT_HISTORY_FILE, 'r') as src:
+#                     with open(backup_file, 'w') as dst:
+#                         dst.write(src.read())
+#                 logger.debug(f"Created backup of deployment history: {backup_file}")
+#             except Exception as e:
+#                 logger.error(f"Error creating backup of history file: {str(e)}")
+        
+#         # Save the current deployment history
+#         with open(DEPLOYMENT_HISTORY_FILE, 'w') as f:
+#             json.dump(deployments, f)
+#         logger.info(f"Saved {len(deployments)} deployments to history file")
+        
+#         # Clean up old backup files (keep only last 10)
+#         backup_files = sorted(glob.glob(os.path.join(DEPLOYMENT_LOGS_DIR, 'deployment_history_*.json')))
+#         if len(backup_files) > 10:
+#             for old_file in backup_files[:-10]:
+#                 try:
+#                     os.remove(old_file)
+#                     logger.debug(f"Removed old backup file: {old_file}")
+#                 except Exception as e:
+#                     logger.error(f"Error removing old backup file {old_file}: {str(e)}")
+#     except Exception as e:
+#         logger.error(f"Failed to save deployment history: {str(e)}")
 
 # Helper function to log message to deployment log
 def log_message(deployment_id, message):
@@ -501,7 +566,11 @@ def process_file_deployment(deployment_id):
         
         # Create ssh control directory to avoid "cannot bind to path" errors
         os.makedirs('/tmp/ansible-ssh', exist_ok=True)
-        os.chmod('/tmp/ansible-ssh', 0o777)
+        # os.chmod('/tmp/ansible-ssh', 0o777)
+        try:
+            os.chmod('/tmp/ansible-ssh', 0o777)  # Set proper permissions for ansible control path
+        except PermissionError:
+            logger.info("Could not set permissions on /tmp/ansible-ssh - continuing with existing permissions")
         log_message(deployment_id, "Ensured ansible control path directory exists with permissions 777")
         
         # Run ansible playbook
@@ -715,22 +784,22 @@ def run_shell_command():
     logger.info(f"Shell command initiated with ID: {deployment_id}")
     return jsonify({"deploymentId": deployment_id, "commandId": deployment_id})
 
+
 def process_shell_command(deployment_id):
     deployment = deployments[deployment_id]
-    
+
     try:
         command = deployment["command"]
         vms = deployment["vms"]
-        sudo = deployment["sudo"]
+        sudo = deployment.get("sudo")
         user = deployment.get("user", "infadm")
         working_dir = deployment.get("working_dir", "")
-        
+
         log_message(deployment_id, f"Running command on {len(vms)} VMs: {command}")
-        
-        # Generate an ansible playbook for shell command
+
+        # Generate an Ansible playbook for shell command
         playbook_file = f"/tmp/shell_command_{deployment_id}.yml"
-        
-        # Enhanced playbook that properly escapes command and handles working directory
+
         with open(playbook_file, 'w') as f:
             f.write(f"""---
 - name: Run shell command on VMs
@@ -738,33 +807,109 @@ def process_shell_command(deployment_id):
   gather_facts: true
   become: {"true" if sudo else "false"}
   become_method: sudo
-  become_user: {user}
+  become_user: "{user}"
   tasks:
-    # Test connection
     - name: Test connection
       ansible.builtin.ping:
-      
-    # Create working directory if specified and doesn't exist
+
+    - name: Debug working_dir value
+      ansible.builtin.debug:
+        msg: "working_dir is '{{{{ working_dir | default('UNDEFINED') }}}}'"
+
     - name: Ensure working directory exists
       ansible.builtin.file:
-        path: "{working_dir}"
+        path: "{{{{ working_dir }}}}"
         state: directory
         mode: '0755'
-      when: "{bool(working_dir)}" | bool
+      when: working_dir is defined and working_dir | trim | length > 0
       become: {"true" if sudo else "false"}
-      become_user: {user}
-      
+      become_user: "{user}"
+
     - name: Execute shell command
-      ansible.builtin.shell: {command}
+      ansible.builtin.shell: "{{{{ command }}}}"
       args:
         executable: /bin/bash
-        chdir: "{working_dir if working_dir else '~'}"
+        chdir: "{{{{ working_dir | default('~') }}}}"
       register: command_result
-      
+      become: {"true" if sudo else "false"}
+      become_user: "{user}"
+
     - name: Log command result
       ansible.builtin.debug:
         var: command_result.stdout_lines
 """)
+# def process_shell_command(deployment_id):
+#     deployment = deployments[deployment_id]
+    
+#     try:
+#         command = deployment["command"]
+#         vms = deployment["vms"]
+#         sudo = deployment["sudo"]
+#         user = deployment.get("user", "infadm")
+#         working_dir = deployment.get("working_dir", "")
+        
+#         log_message(deployment_id, f"Running command on {len(vms)} VMs: {command}")
+        
+#         # Generate an ansible playbook for shell command
+#         playbook_file = f"/tmp/shell_command_{deployment_id}.yml"
+        
+#         # Enhanced playbook that properly escapes command and handles working directory
+#         with open(playbook_file, 'w') as f:
+#             f.write(f"""---
+# - name: Run shell command on VMs
+#   hosts: command_targets
+#   gather_facts: true
+#   become: {"true" if sudo else "false"}
+#   become_method: sudo
+#   become_user: {user}
+#   tasks:
+#     # Test connection
+#     - name: Test connection
+#       ansible.builtin.ping:
+      
+#     # Create working directory if specified and doesn't exist
+
+#     # - name: Ensure working directory exists
+#     #   ansible.builtin.file:
+#     #     path: "{working_dir}"
+#     #     state: directory
+#     #     mode: '0755'
+#     #   when: "{bool(working_dir)}" | bool
+#     # #   when: bool(working_dir)
+#     #   become: {"true" if sudo else "false"}
+#     #   become_user: {user}
+#     - name: Debug working_dir value
+#       ansible.builtin.debug:
+#         msg: "working_dir is '{{ working_dir | default('UNDEFINED') }}'"
+
+#     - name: Ensure working directory exists
+#       ansible.builtin.file:
+#         path: "{{ working_dir }}"
+#         state: directory
+#         mode: '0755'
+#     #   when: working_dir is defined and working_dir | bool
+#       when: working_dir is defined and working_dir | trim | length > 0
+#       become: "{{ sudo | default(false) }}"
+#       become_user: "{{ user | default(omit) }}"
+      
+#     - name: Execute shell command
+#       ansible.builtin.shell: {command}
+#       args:
+#         executable: /bin/bash
+#         chdir: "{working_dir if working_dir else '~'}"
+#       register: command_result
+#     # - name: Execute shell command
+#     #   ansible.builtin.shell: "{{ command }}"
+#     #   args:
+#     #     chdir: "{{ working_dir | default('~') }}"
+#     #   register: command_result
+#     #   become: "{{ sudo | default(false) }}"
+#     #   become_user: "{{ user | default(omit) }}"  
+
+#     - name: Log command result
+#       ansible.builtin.debug:
+#         var: command_result.stdout_lines
+# """)
         logger.debug(f"Created Ansible playbook for shell command: {playbook_file}")
         
         # Generate inventory file for ansible
@@ -782,7 +927,11 @@ def process_shell_command(deployment_id):
         
         # Ensure control path directory exists
         os.makedirs('/tmp/ansible-ssh', exist_ok=True)
-        os.chmod('/tmp/ansible-ssh', 0o777)
+        # os.chmod('/tmp/ansible-ssh', 0o777)
+        try:
+            os.chmod('/tmp/ansible-ssh', 0o777)  # Set proper permissions for ansible control path
+        except PermissionError:
+            logger.info("Could not set permissions on /tmp/ansible-ssh - continuing with existing permissions")
         
         # Run ansible playbook
         env_vars = os.environ.copy()
@@ -1777,7 +1926,11 @@ if __name__ == '__main__':
     
     # Ensure required directories exist
     os.makedirs('/tmp/ansible-ssh', exist_ok=True)
-    os.chmod('/tmp/ansible-ssh', 0o777)
+    # os.chmod('/tmp/ansible-ssh', 0o777)
+    try:
+        os.chmod('/tmp/ansible-ssh', 0o777)  # Set proper permissions for ansible control path
+    except PermissionError:
+        logger.info("Could not set permissions on /tmp/ansible-ssh - continuing with existing permissions")
     logger.info("Ensured ansible control path directory exists with permissions 777")
     
     # Print SSH key information for debugging
