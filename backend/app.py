@@ -8,6 +8,7 @@ import uuid
 import threading
 import logging
 import glob
+import tempfile
 import re
 from logging.handlers import RotatingFileHandler
 from werkzeug.utils import secure_filename
@@ -621,46 +622,54 @@ def process_file_deployment(deployment_id):
         logger.exception(f"Exception in file deployment {deployment_id}: {str(e)}")
         save_deployment_history()
 
-# API to validate file deployment
+# # API to validate file deployment
+
 @app.route('/api/deploy/<deployment_id>/validate', methods=['POST'])
 def validate_deployment(deployment_id):
     logger.info(f"Validating deployment with ID: {deployment_id}")
     
     data = request.json or {}
     use_sudo = data.get('sudo', False)
-    
+
     if deployment_id not in deployments:
         logger.error(f"Deployment not found with ID: {deployment_id}")
         return jsonify({"error": "Deployment not found"}), 404
     
     deployment = deployments[deployment_id]
-    
+
     if deployment["type"] != "file":
         logger.error(f"Cannot validate non-file deployment type: {deployment['type']}")
         return jsonify({"error": "Only file deployments can be validated"}), 400
     
     vms = deployment["vms"]
-    target_path = os.path.join(deployment["target_path"], deployment["file"])
-    
-    log_message(deployment_id, f"Starting validation for file {deployment['file']} on {len(vms)} VMs")
+    file_name = deployment["file"]
+    target_path = os.path.join(deployment["target_path"], file_name)
+
+    log_message(deployment_id, f"Starting validation for file {file_name} on {len(vms)} VMs")
     
     results = []
-    
+
     for vm_name in vms:
-        # Find VM IP from inventory
         vm = next((v for v in inventory["vms"] if v["name"] == vm_name), None)
         if not vm:
             log_message(deployment_id, f"ERROR: VM {vm_name} not found in inventory")
             results.append({
                 "vm": vm_name,
-                "status": "ERROR: VM not found"
+                "status": "ERROR",
+                "message": "VM not found"
             })
             continue
-        
-        # Generate a playbook to run cksum command
-        validate_playbook = f"/tmp/validate_{deployment_id}_{vm_name}.yml"
-        with open(validate_playbook, 'w') as f:
-            f.write(f"""---
+
+        try:
+            # Use tempfile to create unique playbook and inventory files
+            with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.yml') as tmp_playbook, \
+                 tempfile.NamedTemporaryFile(mode='w', delete=False) as tmp_inventory:
+                
+                validate_playbook = tmp_playbook.name
+                validate_inventory = tmp_inventory.name
+
+                # Write Ansible playbook
+                tmp_playbook.write(f"""---
 - name: Validate file
   hosts: {vm_name}
   gather_facts: false
@@ -671,76 +680,235 @@ def validate_deployment(deployment_id):
         path: "{target_path}"
       register: file_check
       failed_when: not file_check.stat.exists
-      
-    - name: Run cksum command
+
+    - name: Get file checksum
       shell: cksum "{target_path}" | awk '{{print $1, $2}}'
       register: cksum_result
       when: file_check.stat.exists
-      
+
     - name: Get file permissions
       shell: ls -la "{target_path}" | awk '{{print $1, $3, $4}}'
       register: perm_result
       when: file_check.stat.exists
 """)
-        
-        # Generate inventory file
-        validate_inventory = f"/tmp/validate_inventory_{deployment_id}_{vm_name}"
-        with open(validate_inventory, 'w') as f:
-            f.write(f"{vm_name} ansible_host={vm['ip']} ansible_user=infadm ansible_ssh_private_key_file=/root/.ssh/id_rsa ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ControlMaster=auto -o ControlPath=/tmp/ansible-ssh/%h-%p-%r -o ControlPersist=60s'")
-        
-        log_message(deployment_id, f"Running validation on {vm_name}")
-        cmd = ["ansible-playbook", "-i", validate_inventory, validate_playbook, "--limit", vm_name, "-v"]
-        
-        try:
+                # Write inventory file
+#                 tmp_inventory.write(f"""{vm_name} ansible_host={vm['ip']} ansible_user=infadm ansible_ssh_private_key_file=/root/.ssh/id_rsa ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ControlMaster=auto -o ControlPath=/tmp/ansible-ssh/%h-%p-%r -o ControlPersist=60s'
+# """)      
+            # validate_inventory = f"/tmp/validate_inventory_{deployment_id}_{vm_name}"
+            # with open(validate_inventory, 'w') as f:
+            #     f.write(f"{vm_name} ansible_host={vm['ip']} ansible_user=infadm ansible_ssh_private_key_file=/root/.ssh/id_rsa ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ControlMaster=auto -o ControlPath=/tmp/ansible-ssh/%h-%p-%r -o ControlPersist=60s'")
+
+            # log_message(deployment_id, f"Running validation on {vm_name}")
+            # cmd = ["ansible-playbook", "-i", validate_inventory, validate_playbook, "--limit", vm_name, "-v"]
+            # output = subprocess.check_output(cmd, stderr=subprocess.STDOUT).decode().strip()
+            # logger.debug(f"Validation output for {vm_name}: {output}")
+            # log_message(deployment_id, f"Raw validation output on {vm_name}: {output}")
+
+            # # Initialize defaults
+            # cksum_info = "File not found"
+            # perm_info = "N/A"
+
+            # # Extract using safer regex
+            # cksum_match = re.search(r'"cksum_result": \{.*?"stdout": "(.*?)"', output, re.DOTALL)
+            # if cksum_match:
+            #     cksum_info = cksum_match.group(1).strip()
+            #     logger.debug(f"Extracted checksum for {vm_name}: {cksum_info}")
+
+            # perm_match = re.search(r'"perm_result": \{.*?"stdout": "(.*?)"', output, re.DOTALL)
+            # if perm_match:
+            #     perm_info = perm_match.group(1).strip()
+            #     logger.debug(f"Extracted permissions for {vm_name}: {perm_info}")
+
+            # result_message = f"Checksum={cksum_info}, Permissions={perm_info}"
+            # log_message(deployment_id, f"Validation on {vm_name}: {result_message}")
+            validate_inventory = f"/tmp/validate_inventory_{deployment_id}_{vm_name}"
+            with open(validate_inventory, 'w') as f:
+                f.write(f"{vm_name} ansible_host={vm['ip']} ansible_user=infadm ansible_ssh_private_key_file=/root/.ssh/id_rsa ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ControlMaster=auto -o ControlPath=/tmp/ansible-ssh/%h-%p-%r -o ControlPersist=60s'")
+
+            log_message(deployment_id, f"Running validation on {vm_name}")
+            cmd = ["ansible-playbook", "-i", validate_inventory, validate_playbook, "--limit", vm_name, "-v"]
             output = subprocess.check_output(cmd, stderr=subprocess.STDOUT).decode().strip()
             logger.debug(f"Validation output for {vm_name}: {output}")
             log_message(deployment_id, f"Raw validation output on {vm_name}: {output}")
-            
-            # Check if cksum information is in output
+
+            # Initialize defaults
             cksum_info = "File not found"
             perm_info = "N/A"
-            
-            # Extract checksum using regex
-            cksum_match = re.search(r'cksum_result.*?stdout.*?"(.*?)"', output, re.DOTALL)
+
+            # Extract checksum - look for the stdout value in the checksum task
+            cksum_match = re.search(r'TASK \[Get file checksum\].*?"stdout": "([^"]*)"', output, re.DOTALL)
             if cksum_match:
-                cksum_info = cksum_match.group(1)
-                logger.debug(f"Extracted checksum: {cksum_info}")
-            
-            # Extract permissions using regex
-            perm_match = re.search(r'perm_result.*?stdout.*?"(.*?)"', output, re.DOTALL)
+                cksum_info = cksum_match.group(1).strip()
+                logger.debug(f"Extracted checksum for {vm_name}: {cksum_info}")
+            else:
+                # Fallback: try to find any stdout with checksum pattern (numbers followed by number)
+                fallback_cksum = re.search(r'"stdout": "(\d+\s+\d+)"', output)
+                if fallback_cksum:
+                    cksum_info = fallback_cksum.group(1).strip()
+                    logger.debug(f"Extracted checksum (fallback) for {vm_name}: {cksum_info}")
+
+            # Extract permissions - look for the stdout value in the permissions task  
+            perm_match = re.search(r'TASK \[Get file permissions\].*?"stdout": "([^"]*)"', output, re.DOTALL)
             if perm_match:
-                perm_info = perm_match.group(1)
-                logger.debug(f"Extracted permissions: {perm_info}")
-            
-            result_message = f"Validation on {vm_name}: Checksum={cksum_info}, Permissions={perm_info}"
-            log_message(deployment_id, result_message)
-            
+                perm_info = perm_match.group(1).strip()
+                logger.debug(f"Extracted permissions for {vm_name}: {perm_info}")
+            else:
+                # Fallback: try to find any stdout with file permission pattern
+                fallback_perm = re.search(r'"stdout": "(-[rwx-]+\.?\s+\w+\s+\w+)"', output)
+                if fallback_perm:
+                    perm_info = fallback_perm.group(1).strip()
+                    logger.debug(f"Extracted permissions (fallback) for {vm_name}: {perm_info}")
+
+            result_message = f"Checksum={cksum_info}, Permissions={perm_info}"
+            log_message(deployment_id, f"Validation on {vm_name}: {result_message}")           
             results.append({
                 "vm": vm_name,
                 "status": "SUCCESS",
+                "message": result_message,
                 "cksum": cksum_info,
                 "permissions": perm_info
             })
-            
-            # Clean up temp files
-            try:
-                os.remove(validate_playbook)
-                os.remove(validate_inventory)
-            except:
-                pass
-                
+
         except subprocess.CalledProcessError as e:
             error = e.output.decode().strip()
             log_message(deployment_id, f"Validation failed on {vm_name}: {error}")
             results.append({
                 "vm": vm_name,
                 "status": "ERROR",
+                "message": "Validation failed",
                 "output": error
             })
-    
+
+        finally:
+            # Ensure cleanup even on error
+            try:
+                os.remove(validate_playbook)
+                os.remove(validate_inventory)
+            except Exception as cleanup_err:
+                logger.warning(f"Failed to clean up temp files for {vm_name}: {cleanup_err}")
+
     logger.info(f"Validation completed for deployment {deployment_id} with {len(results)} results")
-    save_deployment_history()  # Save logs from validation
+    save_deployment_history()
     return jsonify({"results": results})
+# @app.route('/api/deploy/<deployment_id>/validate', methods=['POST'])
+# def validate_deployment(deployment_id):
+#     logger.info(f"Validating deployment with ID: {deployment_id}")
+    
+#     data = request.json or {}
+#     use_sudo = data.get('sudo', False)
+    
+#     if deployment_id not in deployments:
+#         logger.error(f"Deployment not found with ID: {deployment_id}")
+#         return jsonify({"error": "Deployment not found"}), 404
+    
+#     deployment = deployments[deployment_id]
+    
+#     if deployment["type"] != "file":
+#         logger.error(f"Cannot validate non-file deployment type: {deployment['type']}")
+#         return jsonify({"error": "Only file deployments can be validated"}), 400
+    
+#     vms = deployment["vms"]
+#     target_path = os.path.join(deployment["target_path"], deployment["file"])
+    
+#     log_message(deployment_id, f"Starting validation for file {deployment['file']} on {len(vms)} VMs")
+    
+#     results = []
+    
+#     for vm_name in vms:
+#         # Find VM IP from inventory
+#         vm = next((v for v in inventory["vms"] if v["name"] == vm_name), None)
+#         if not vm:
+#             log_message(deployment_id, f"ERROR: VM {vm_name} not found in inventory")
+#             results.append({
+#                 "vm": vm_name,
+#                 "status": "ERROR: VM not found"
+#             })
+#             continue
+        
+#         # Generate a playbook to run cksum command
+#         validate_playbook = f"/tmp/validate_{deployment_id}_{vm_name}.yml"
+#         with open(validate_playbook, 'w') as f:
+#             f.write(f"""---
+# - name: Validate file
+#   hosts: {vm_name}
+#   gather_facts: false
+#   become: {"true" if use_sudo else "false"}
+#   tasks:
+#     - name: Check if file exists
+#       stat:
+#         path: "{target_path}"
+#       register: file_check
+#       failed_when: not file_check.stat.exists
+      
+#     - name: Run cksum command
+#       shell: cksum "{target_path}" | awk '{{print $1, $2}}'
+#       register: cksum_result
+#       when: file_check.stat.exists
+      
+#     - name: Get file permissions
+#       shell: ls -la "{target_path}" | awk '{{print $1, $3, $4}}'
+#       register: perm_result
+#       when: file_check.stat.exists
+# """)
+        
+#        # # Generate inventory file
+#        # validate_inventory = f"/tmp/validate_inventory_{deployment_id}_{vm_name}"
+#        # with open(validate_inventory, 'w') as f:
+#        #     f.write(f"{vm_name} ansible_host={vm['ip']} ansible_user=infadm ansible_ssh_private_key_file=/root/.ssh/id_rsa ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ControlMaster=auto -o ControlPath=/tmp/ansible-ssh/%h-%p-%r -o ControlPersist=60s'")
+       
+#        # log_message(deployment_id, f"Running validation on {vm_name}")
+#        # cmd = ["ansible-playbook", "-i", validate_inventory, validate_playbook, "--limit", vm_name, "-v"]
+       
+#        # try:
+#             output = subprocess.check_output(cmd, stderr=subprocess.STDOUT).decode().strip()
+#             logger.debug(f"Validation output for {vm_name}: {output}")
+#             log_message(deployment_id, f"Raw validation output on {vm_name}: {output}")
+            
+#             # Check if cksum information is in output
+#             cksum_info = "File not found"
+#             perm_info = "N/A"
+            
+#             # Extract checksum using regex
+#             cksum_match = re.search(r'cksum_result.*?stdout.*?"(.*?)"', output, re.DOTALL)
+#             if cksum_match:
+#                 cksum_info = cksum_match.group(1)
+#                 logger.debug(f"Extracted checksum: {cksum_info}")
+            
+#             # Extract permissions using regex
+#             perm_match = re.search(r'perm_result.*?stdout.*?"(.*?)"', output, re.DOTALL)
+#             if perm_match:
+#                 perm_info = perm_match.group(1)
+#                 logger.debug(f"Extracted permissions: {perm_info}")
+            
+#             result_message = f"Validation on {vm_name}: Checksum={cksum_info}, Permissions={perm_info}"
+#             log_message(deployment_id, result_message)
+            
+#             results.append({
+#                 "vm": vm_name,
+#                 "status": "SUCCESS",
+#                 "cksum": cksum_info,
+#                 "permissions": perm_info
+#             })
+            
+#             # Clean up temp files
+#             try:
+#                 os.remove(validate_playbook)
+#                 os.remove(validate_inventory)
+#             except:
+#                 pass
+                
+#         except subprocess.CalledProcessError as e:
+#             error = e.output.decode().strip()
+#             log_message(deployment_id, f"Validation failed on {vm_name}: {error}")
+#             results.append({
+#                 "vm": vm_name,
+#                 "status": "ERROR",
+#                 "output": error
+#             })
+    
+#     logger.info(f"Validation completed for deployment {deployment_id} with {len(results)} results")
+#     save_deployment_history()  # Save logs from validation
+#     return jsonify({"results": results})
 
 # API to run shell command
 @app.route('/api/command/shell', methods=['POST'])
@@ -787,19 +955,20 @@ def run_shell_command():
 
 def process_shell_command(deployment_id):
     deployment = deployments[deployment_id]
-
+    
     try:
         command = deployment["command"]
         vms = deployment["vms"]
-        sudo = deployment.get("sudo")
+        sudo = deployment["sudo"]
         user = deployment.get("user", "infadm")
         working_dir = deployment.get("working_dir", "")
-
+        
         log_message(deployment_id, f"Running command on {len(vms)} VMs: {command}")
-
-        # Generate an Ansible playbook for shell command
+        
+        # Generate an ansible playbook for shell command
         playbook_file = f"/tmp/shell_command_{deployment_id}.yml"
-
+        
+        # Enhanced playbook with proper variable handling
         with open(playbook_file, 'w') as f:
             f.write(f"""---
 - name: Run shell command on VMs
@@ -807,109 +976,50 @@ def process_shell_command(deployment_id):
   gather_facts: true
   become: {"true" if sudo else "false"}
   become_method: sudo
-  become_user: "{user}"
+  become_user: {user}
+  vars:
+    working_dir: "{working_dir}"
+    target_user: "{user}"
+    use_sudo: {"true" if sudo else "false"}
   tasks:
+    # Test connection
     - name: Test connection
       ansible.builtin.ping:
-
+      
+    # Debug working directory value
     - name: Debug working_dir value
       ansible.builtin.debug:
         msg: "working_dir is '{{{{ working_dir | default('UNDEFINED') }}}}'"
 
+    # Create working directory if specified and doesn't exist
     - name: Ensure working directory exists
       ansible.builtin.file:
         path: "{{{{ working_dir }}}}"
         state: directory
         mode: '0755'
       when: working_dir is defined and working_dir | trim | length > 0
-      become: {"true" if sudo else "false"}
-      become_user: "{user}"
-
+      become: "{{{{ use_sudo }}}}"
+      become_user: "{{{{ target_user if use_sudo else omit }}}}"
+      
+    # Execute the shell command
     - name: Execute shell command
-      ansible.builtin.shell: "{{{{ command }}}}"
+      ansible.builtin.shell: "{command}"
       args:
         executable: /bin/bash
-        chdir: "{{{{ working_dir | default('~') }}}}"
-      register: command_result
-      become: {"true" if sudo else "false"}
-      become_user: "{user}"
+        chdir: "{{{{ working_dir if (working_dir is defined and working_dir | trim | length > 0) else '~' }}}}"
+      register: command_result 
 
+    # Log command result
     - name: Log command result
       ansible.builtin.debug:
         var: command_result.stdout_lines
+        
+    # Also log stderr if there are errors
+    - name: Log command errors (if any)
+      ansible.builtin.debug:
+        var: command_result.stderr_lines
+      when: command_result.stderr_lines is defined and command_result.stderr_lines | length > 0
 """)
-# def process_shell_command(deployment_id):
-#     deployment = deployments[deployment_id]
-    
-#     try:
-#         command = deployment["command"]
-#         vms = deployment["vms"]
-#         sudo = deployment["sudo"]
-#         user = deployment.get("user", "infadm")
-#         working_dir = deployment.get("working_dir", "")
-        
-#         log_message(deployment_id, f"Running command on {len(vms)} VMs: {command}")
-        
-#         # Generate an ansible playbook for shell command
-#         playbook_file = f"/tmp/shell_command_{deployment_id}.yml"
-        
-#         # Enhanced playbook that properly escapes command and handles working directory
-#         with open(playbook_file, 'w') as f:
-#             f.write(f"""---
-# - name: Run shell command on VMs
-#   hosts: command_targets
-#   gather_facts: true
-#   become: {"true" if sudo else "false"}
-#   become_method: sudo
-#   become_user: {user}
-#   tasks:
-#     # Test connection
-#     - name: Test connection
-#       ansible.builtin.ping:
-      
-#     # Create working directory if specified and doesn't exist
-
-#     # - name: Ensure working directory exists
-#     #   ansible.builtin.file:
-#     #     path: "{working_dir}"
-#     #     state: directory
-#     #     mode: '0755'
-#     #   when: "{bool(working_dir)}" | bool
-#     # #   when: bool(working_dir)
-#     #   become: {"true" if sudo else "false"}
-#     #   become_user: {user}
-#     - name: Debug working_dir value
-#       ansible.builtin.debug:
-#         msg: "working_dir is '{{ working_dir | default('UNDEFINED') }}'"
-
-#     - name: Ensure working directory exists
-#       ansible.builtin.file:
-#         path: "{{ working_dir }}"
-#         state: directory
-#         mode: '0755'
-#     #   when: working_dir is defined and working_dir | bool
-#       when: working_dir is defined and working_dir | trim | length > 0
-#       become: "{{ sudo | default(false) }}"
-#       become_user: "{{ user | default(omit) }}"
-      
-#     - name: Execute shell command
-#       ansible.builtin.shell: {command}
-#       args:
-#         executable: /bin/bash
-#         chdir: "{working_dir if working_dir else '~'}"
-#       register: command_result
-#     # - name: Execute shell command
-#     #   ansible.builtin.shell: "{{ command }}"
-#     #   args:
-#     #     chdir: "{{ working_dir | default('~') }}"
-#     #   register: command_result
-#     #   become: "{{ sudo | default(false) }}"
-#     #   become_user: "{{ user | default(omit) }}"  
-
-#     - name: Log command result
-#       ansible.builtin.debug:
-#         var: command_result.stdout_lines
-# """)
         logger.debug(f"Created Ansible playbook for shell command: {playbook_file}")
         
         # Generate inventory file for ansible
@@ -1755,17 +1865,46 @@ def clear_deployment_history():
     if days == 0:  # If days is 0, clear all logs
         deployments.clear()
     else:
-        to_delete = [deployment_id for deployment_id, deployment in deployments.items() 
-                     if deployment.get('timestamp', 0) < cutoff_time]
+        to_delete = []
+        for deployment_id, deployment in deployments.items():
+            try:
+                # Get timestamp and convert to float if it's a string
+                timestamp = deployment.get('timestamp', 0)
+                if isinstance(timestamp, str):
+                    # Try to convert string timestamp to float
+                    try:
+                        timestamp = float(timestamp)
+                    except ValueError:
+                        # If conversion fails, treat as very old (0)
+                        timestamp = 0
+                elif timestamp is None:
+                    timestamp = 0
+                
+                # Compare with cutoff time
+                if timestamp < cutoff_time:
+                    to_delete.append(deployment_id)
+                    
+            except Exception as e:
+                logger.warning(f"Error processing timestamp for deployment {deployment_id}: {e}")
+                # If there's any error, consider it for deletion (treat as old)
+                to_delete.append(deployment_id)
         
+        # Delete the identified deployments
         for deployment_id in to_delete:
-            del deployments[deployment_id]
+            try:
+                del deployments[deployment_id]
+            except KeyError:
+                logger.warning(f"Deployment {deployment_id} was already deleted")
     
     # Count how many were deleted
     deleted_count = initial_count - len(deployments)
     
     # Save updated deployment history
-    save_deployment_history()
+    try:
+        save_deployment_history()
+    except Exception as e:
+        logger.error(f"Error saving deployment history: {e}")
+        return jsonify({"error": "Failed to save deployment history"}), 500
     
     return jsonify({
         "message": f"Successfully cleared {deleted_count} deployment logs",
@@ -1773,11 +1912,142 @@ def clear_deployment_history():
         "remaining_count": len(deployments)
     })
 
+# @app.route('/api/deployments/clear', methods=['POST'])
+# def clear_deployment_history():
+#     days = request.json.get('days', 30)
+#     logger.info(f"Clearing deployment logs older than {days} days")
+    
+#     if days < 0:
+#         return jsonify({"error": "Days must be a positive number"}), 400
+    
+#     # Calculate cutoff timestamp
+#     cutoff_time = time.time() - (days * 86400)  # 86400 seconds in a day
+    
+#     # Count deployments before deletion
+#     initial_count = len(deployments)
+    
+#     # Filter deployments to keep only those newer than the cutoff
+#     if days == 0:  # If days is 0, clear all logs
+#         deployments.clear()
+#     else:
+#         to_delete = [deployment_id for deployment_id, deployment in deployments.items() 
+#                      if deployment.get('timestamp', 0) < cutoff_time]
+        
+#         for deployment_id in to_delete:
+#             del deployments[deployment_id]
+    
+#     # Count how many were deleted
+#     deleted_count = initial_count - len(deployments)
+    
+#     # Save updated deployment history
+#     save_deployment_history()
+    
+#     return jsonify({
+#         "message": f"Successfully cleared {deleted_count} deployment logs",
+#         "deleted_count": deleted_count,
+#         "remaining_count": len(deployments)
+#     })
+
 # API endpoint to update systemd service
+# @app.route('/api/systemd/<operation>', methods=['POST'])
+# def systemd_operation(operation):
+#     data = request.json
+#     operation = data.get('operation', '').strip().lower()
+#     service = data.get('service')
+#     vms = data.get('vms')
+    
+#     if not all([service, vms, operation]):
+#         logger.error("Missing required parameters for systemd operation")
+#         return jsonify({"error": "Missing required parameters"}), 400
+    
+#     if operation not in ['start', 'stop', 'restart', 'status']:
+#         logger.error(f"Invalid systemd operation: {operation}")
+#         return jsonify({"error": "Invalid operation. Must be one of: start, stop, restart, status"}), 400
+    
+#     # Generate a unique deployment ID
+#     deployment_id = str(uuid.uuid4())
+    
+#     # Store deployment information
+#     deployments[deployment_id] = {
+#         "id": deployment_id,
+#         "type": "systemd",
+#         "service": service,
+#         "operation": operation,
+#         "vms": vms,
+#         "status": "running",
+#         "timestamp": time.time(),
+#         "logs": []
+#     }
+    
+#     # Save deployment history
+#     save_deployment_history()
+    
+#     # Start systemd operation in a separate thread
+#     threading.Thread(target=process_systemd_operation, args=(deployment_id, operation, service, vms)).start()
+    
+#     logger.info(f"Systemd {operation} initiated with ID: {deployment_id}")
+#     return jsonify({"deploymentId": deployment_id})
+
+# def process_systemd_operation(deployment_id, operation, service, vms):
+#     try:
+#         log_message(deployment_id, f"Starting systemd {operation} for {service} on {len(vms)} VMs")
+        
+#         # Generate an ansible playbook for systemd operation
+#         playbook_file = f"/tmp/systemd_{deployment_id}.yml"
+        
+#         with open(playbook_file, 'w') as f:
+#             f.write(f"""---
+# - name: Systemd {operation} operation
+#   hosts: systemd_targets
+#   gather_facts: false
+#   become: true
+#   tasks:
+#     - name: Check if service exists
+#       stat:
+#         path: "/usr/lib/systemd/system/{service}"
+#       register: service_file
+      
+#     - name: Get service status
+#       systemd:
+#         name: "{service}"
+#         state: "{operation if operation != 'status' else 'started'}"
+#         enabled: yes
+#       register: service_result
+#       when: service_file.stat.exists
+#       changed_when: false
+#       failed_when: false
+#       check_mode: "{operation == 'status'}"
+      
+#     - name: Display service status
+#       debug:
+#         # var: service_result
+#         # msg: "Service '{{ service_result.name }}' is {{ service_result.status.ActiveState }} (SubState: {{ service_result.status.SubState }})"
+#         msg: >
+#           Service {{ service_name }} is {{ 'running' if service_status.status.ActiveState == 'active' else 'not running' }},
+#           and it is {{ 'enabled' if service_status.enabled else 'disabled' }}.
+#       when: service_file.stat.exists and '{operation}' == 'status'
+      
+#     - name: Perform systemd operation
+#       systemd:
+#         name: "{service}"
+#         state: "{operation if operation != 'status' else 'started'}"
+#       when: service_file.stat.exists and '{operation}' != 'status'
+#       register: operation_result
+      
+#     - name: Log operation result
+#       debug:
+#         msg: "Service operation {operation} on {service} was successful"
+#       when: service_file.stat.exists and '{operation}' != 'status'
+# """)
+
+def get_current_timestamp():
+    """Return current timestamp as float"""
+    return time.time()
+
 @app.route('/api/systemd/<operation>', methods=['POST'])
 def systemd_operation(operation):
     data = request.json
-    operation = data.get('operation', '').strip().lower()
+    operation = data.get('operation', operation).strip().lower()  # Use URL param or body param
     service = data.get('service')
     vms = data.get('vms')
     
@@ -1800,7 +2070,7 @@ def systemd_operation(operation):
         "operation": operation,
         "vms": vms,
         "status": "running",
-        "timestamp": time.time(),
+        "timestamp": get_current_timestamp(),
         "logs": []
     }
     
@@ -1813,58 +2083,190 @@ def systemd_operation(operation):
     logger.info(f"Systemd {operation} initiated with ID: {deployment_id}")
     return jsonify({"deploymentId": deployment_id})
 
+
 def process_systemd_operation(deployment_id, operation, service, vms):
     try:
-        log_message(deployment_id, f"Starting systemd {operation} for {service} on {len(vms)} VMs")
+        log_message(deployment_id, f"Starting systemd {operation} for service '{service}' on {len(vms)} VMs")
         
         # Generate an ansible playbook for systemd operation
         playbook_file = f"/tmp/systemd_{deployment_id}.yml"
         
         with open(playbook_file, 'w') as f:
             f.write(f"""---
-- name: Systemd {operation} operation
+- name: Systemd {operation} operation for {service}
   hosts: systemd_targets
-  gather_facts: false
-  become: true
+  gather_facts: true
+#   become: true
+  vars:
+    service_name: "{service}"
+    operation_type: "{operation}"
   tasks:
-    - name: Check if service exists
-      stat:
-        path: "/usr/lib/systemd/system/{service}"
-      register: service_file
+    - name: Test connection
+      ansible.builtin.ping:
       
-    - name: Get service status
-      systemd:
-        name: "{service}"
-        state: "{operation if operation != 'status' else 'started'}"
-        enabled: yes
-      register: service_result
-      when: service_file.stat.exists
-      changed_when: false
-      failed_when: false
-      check_mode: "{operation == 'status'}"
+    - name: Check if service unit file exists
+      ansible.builtin.stat:
+        path: "/etc/systemd/system/{{{{ service_name }}}}"
+      register: service_file_etc
       
-    - name: Display service status
-      debug:
-        # var: service_result
-        # msg: "Service '{{ service_result.name }}' is {{ service_result.status.ActiveState }} (SubState: {{ service_result.status.SubState }})"
-        msg: >
-          Service {{ service_name }} is {{ 'running' if service_status.status.ActiveState == 'active' else 'not running' }},
-          and it is {{ 'enabled' if service_status.enabled else 'disabled' }}.
-      when: service_file.stat.exists and '{operation}' == 'status'
+    - name: Check if service unit file exists in lib
+      ansible.builtin.stat:
+        path: "/usr/lib/systemd/system/{{{{ service_name }}}}"
+      register: service_file_lib
       
-    - name: Perform systemd operation
-      systemd:
-        name: "{service}"
-        state: "{operation if operation != 'status' else 'started'}"
-      when: service_file.stat.exists and '{operation}' != 'status'
-      register: operation_result
+    - name: Check if service unit file exists in local
+      ansible.builtin.stat:
+        path: "/usr/local/lib/systemd/system/{{{{ service_name }}}}"
+      register: service_file_local
       
-    - name: Log operation result
-      debug:
-        msg: "Service operation {operation} on {service} was successful"
-      when: service_file.stat.exists and '{operation}' != 'status'
-""")
+    - name: Set service exists fact
+      ansible.builtin.set_fact:
+        service_exists: "{{{{ service_file_etc.stat.exists or service_file_lib.stat.exists or service_file_local.stat.exists }}}}"
         
+    - name: Report if service doesn't exist
+      ansible.builtin.debug:
+        msg: "ERROR: Service '{{{{ service_name }}}}' unit file not found on {{{{ inventory_hostname }}}}"
+      when: not service_exists
+      
+    - name: Get detailed service status
+      ansible.builtin.systemd:
+        name: "{{{{ service_name }}}}"
+      register: service_status
+      when: service_exists
+      failed_when: false
+      
+    - name: Get service status with systemctl
+      ansible.builtin.shell: |
+        systemctl status {{{{ service_name }}}} --no-pager -l || true
+        echo "---SEPARATOR---"
+        systemctl show {{{{ service_name }}}} --property=ActiveState,SubState,LoadState,UnitFileState,ExecMainStartTimestamp,ExecMainPID,MainPID || true
+      register: service_details
+      when: service_exists
+      
+    - name: Parse service uptime
+      ansible.builtin.shell: |
+        if systemctl is-active {{{{ service_name }}}} >/dev/null 2>&1; then
+          start_time=$(systemctl show {{{{ service_name }}}} --property=ExecMainStartTimestamp --value)
+          if [ -n "$start_time" ] && [ "$start_time" != "n/a" ]; then
+            echo "Service started at: $start_time"
+            # Calculate uptime
+            start_epoch=$(date -d "$start_time" +%s 2>/dev/null || echo "0")
+            current_epoch=$(date +%s)
+            if [ "$start_epoch" -gt 0 ]; then
+              uptime_seconds=$((current_epoch - start_epoch))
+              uptime_days=$((uptime_seconds / 86400))
+              uptime_hours=$(((uptime_seconds % 86400) / 3600))
+              uptime_minutes=$(((uptime_seconds % 3600) / 60))
+              echo "Uptime: ${{uptime_days}}d ${{uptime_hours}}h ${{uptime_minutes}}m"
+            else
+              echo "Uptime: Unable to calculate"
+            fi
+          else
+            echo "Service start time: Not available"
+            echo "Uptime: Not available"
+          fi
+        else
+          echo "Service is not active"
+        fi
+      register: service_uptime
+      when: service_exists
+      
+    - name: Display comprehensive service status
+      ansible.builtin.debug:
+        msg: |
+          ===========================================
+          SERVICE STATUS REPORT for {{{{ inventory_hostname }}}}
+          ===========================================
+          Service Name: {{{{ service_name }}}}
+          Active State: {{{{ service_status.status.ActiveState | default('unknown') }}}}
+          Sub State: {{{{ service_status.status.SubState | default('unknown') }}}}
+          Load State: {{{{ service_status.status.LoadState | default('unknown') }}}}
+          Unit File State: {{{{ service_status.status.UnitFileState | default('unknown') }}}}
+          Main PID: {{{{ service_status.status.MainPID | default('N/A') }}}}
+          
+          {{{{ service_uptime.stdout | default('Uptime info not available') }}}}
+          
+          Status: {{{{ 'ACTIVE' if service_status.status.ActiveState == 'active' else 'INACTIVE/DEAD' }}}}
+          Enabled: {{{{ 'YES' if service_status.status.UnitFileState in ['enabled', 'enabled-runtime'] else 'NO' }}}}
+          ===========================================
+      when: service_exists and operation_type == 'status'
+      
+    # - name: Perform systemd START operation
+    #   ansible.builtin.systemd:
+    #     name: "{{{{ service_name }}}}"
+    #     state: started
+    #     enabled: yes
+    #   become: yes  
+    #   register: start_result
+    #   when: service_exists and operation_type == 'start'
+
+    - name: Perform systemd START operation
+      ansible.builtin.shell: |
+        sudo systemctl start {{{{ service_name }}}}
+      register: start_result
+      when: service_exists and operation_type == 'start'
+      
+    # - name: Perform systemd STOP operation
+    #   ansible.builtin.systemd:
+    #     name: "{{{{ service_name }}}}"
+    #     state: stopped
+    #   become: yes  
+    #   register: stop_result
+    #   when: service_exists and operation_type == 'stop'
+
+    - name: Perform systemd STOP operation
+      ansible.builtin.shell: |
+        sudo systemctl stop {{{{ service_name }}}}
+      register: stop_result
+      when: service_exists and operation_type == 'stop'
+      
+    # - name: Perform systemd RESTART operation
+    #   ansible.builtin.systemd:
+    #     name: "{{{{ service_name }}}}"
+    #     state: restarted
+    #     enabled: yes
+    #   become: yes
+    #   register: restart_result
+    #   when: service_exists and operation_type == 'restart'
+
+    - name: Perform systemd RESTART operation
+      ansible.builtin.shell: |
+        sudo systemctl restart {{{{ service_name }}}}
+      register: restart_result
+      when: service_exists and operation_type == 'restart'
+      
+    - name: Verify operation result
+      ansible.builtin.systemd:
+        name: "{{{{ service_name }}}}"
+      register: post_operation_status
+      when: service_exists and operation_type in ['start', 'stop', 'restart']
+      failed_when: false
+      
+    - name: Report operation success
+      ansible.builtin.debug:
+        msg: |
+          ===========================================
+          OPERATION RESULT for {{{{ inventory_hostname }}}}
+          ===========================================
+          Service: {{{{ service_name }}}}
+          Operation: {{{{ operation_type | upper }}}}
+          Result: SUCCESS
+          New Status: {{{{ post_operation_status.status.ActiveState | default('unknown') }}}} ({{{{ post_operation_status.status.SubState | default('unknown') }}}})
+          Enabled: {{{{ 'YES' if post_operation_status.status.UnitFileState in ['enabled', 'enabled-runtime'] else 'NO' }}}}
+          ===========================================
+      when: service_exists and operation_type in ['start', 'stop', 'restart']
+      
+    - name: Get final service status for logging
+      ansible.builtin.shell: systemctl is-active {{{{ service_name }}}} || echo "inactive"
+      register: final_status
+      when: service_exists
+      
+    - name: Log final status
+      ansible.builtin.debug:
+        msg: "Final service status on {{{{ inventory_hostname }}}}: {{{{ final_status.stdout | default('unknown') }}}}"
+      when: service_exists
+""")
+
         # Generate inventory file for ansible
         inventory_file = f"/tmp/inventory_{deployment_id}"
         
@@ -1888,21 +2290,31 @@ def process_systemd_operation(deployment_id, operation, service, vms):
         log_message(deployment_id, f"Executing: {' '.join(cmd)}")
         logger.info(f"Executing Ansible command: {' '.join(cmd)}")
         
-        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env_vars)
+        # Use subprocess.run with capture_output=True instead of Popen
+        result = subprocess.run(cmd, capture_output=True, text=True, env=env_vars, timeout=300)
         
-        for line in process.stdout:
-            log_message(deployment_id, line.strip())
+        # Log the output line by line
+        if result.stdout:
+            log_message(deployment_id, "=== ANSIBLE OUTPUT ===")
+            for line in result.stdout.splitlines():
+                if line.strip():  # Only log non-empty lines
+                    log_message(deployment_id, line.strip())
         
-        process.wait()
+        if result.stderr:
+            log_message(deployment_id, "=== ANSIBLE STDERR ===")
+            for line in result.stderr.splitlines():
+                if line.strip():  # Only log non-empty lines
+                    log_message(deployment_id, line.strip())
         
-        if process.returncode == 0:
+        # Check result and update status
+        if result.returncode == 0:
             log_message(deployment_id, f"SUCCESS: Systemd {operation} operation completed successfully")
-            deployments[deployment_id]["status"] = "success"
+            deployments[deployment_id]["status"] = "completed"
             logger.info(f"Systemd operation {deployment_id} completed successfully")
         else:
-            log_message(deployment_id, f"ERROR: Systemd {operation} operation failed")
+            log_message(deployment_id, f"ERROR: Systemd {operation} operation failed with return code {result.returncode}")
             deployments[deployment_id]["status"] = "failed"
-            logger.error(f"Systemd operation {deployment_id} failed with return code {process.returncode}")
+            logger.error(f"Systemd operation {deployment_id} failed with return code {result.returncode}")
         
         # Clean up temporary files
         try:
@@ -1914,11 +2326,240 @@ def process_systemd_operation(deployment_id, operation, service, vms):
         # Save deployment history after completion
         save_deployment_history()
         
+    except subprocess.TimeoutExpired:
+        log_message(deployment_id, f"ERROR: Systemd {operation} operation timed out after 5 minutes")
+        deployments[deployment_id]["status"] = "failed"
+        logger.error(f"Systemd operation {deployment_id} timed out")
+        save_deployment_history()
+        
     except Exception as e:
         log_message(deployment_id, f"ERROR: Exception during systemd operation: {str(e)}")
         deployments[deployment_id]["status"] = "failed"
         logger.exception(f"Exception in systemd operation {deployment_id}: {str(e)}")
         save_deployment_history()
+# def process_systemd_operation(deployment_id, operation, service, vms):
+#     try:
+#         log_message(deployment_id, f"Starting systemd {operation} for service '{service}' on {len(vms)} VMs")
+        
+#         # Generate an ansible playbook for systemd operation
+#         playbook_file = f"/tmp/systemd_{deployment_id}.yml"
+        
+#         with open(playbook_file, 'w') as f:
+#             f.write(f"""---
+# - name: Systemd {operation} operation for {service}
+#   hosts: systemd_targets
+#   gather_facts: true
+#   become: true
+#   vars:
+#     service_name: "{service}"
+#     operation_type: "{operation}"
+#   tasks:
+#     - name: Test connection
+#       ansible.builtin.ping:
+      
+#     - name: Check if service unit file exists
+#       ansible.builtin.stat:
+#         path: "/etc/systemd/system/{{{{ service_name }}}}.service"
+#       register: service_file_etc
+      
+#     - name: Check if service unit file exists in lib
+#       ansible.builtin.stat:
+#         path: "/usr/lib/systemd/system/{{{{ service_name }}}}.service"
+#       register: service_file_lib
+      
+#     - name: Check if service unit file exists in local
+#       ansible.builtin.stat:
+#         path: "/usr/local/lib/systemd/system/{{{{ service_name }}}}.service"
+#       register: service_file_local
+      
+#     - name: Set service exists fact
+#       ansible.builtin.set_fact:
+#         service_exists: "{{{{ service_file_etc.stat.exists or service_file_lib.stat.exists or service_file_local.stat.exists }}}}"
+        
+#     - name: Report if service doesn't exist
+#       ansible.builtin.debug:
+#         msg: "ERROR: Service '{{{{ service_name }}}}' unit file not found on {{{{ inventory_hostname }}}}"
+#       when: not service_exists
+      
+#     - name: Get detailed service status
+#       ansible.builtin.systemd:
+#         name: "{{{{ service_name }}}}"
+#       register: service_status
+#       when: service_exists
+#       failed_when: false
+      
+#     - name: Get service status with systemctl
+#       ansible.builtin.shell: |
+#         systemctl status {{{{ service_name }}}} --no-pager -l || true
+#         echo "---SEPARATOR---"
+#         systemctl show {{{{ service_name }}}} --property=ActiveState,SubState,LoadState,UnitFileState,ExecMainStartTimestamp,ExecMainPID,MainPID || true
+#       register: service_details
+#       when: service_exists
+      
+#     - name: Parse service uptime
+#       ansible.builtin.shell: |
+#         if systemctl is-active {{{{ service_name }}}} >/dev/null 2>&1; then
+#           start_time=$(systemctl show {{{{ service_name }}}} --property=ExecMainStartTimestamp --value)
+#           if [ -n "$start_time" ] && [ "$start_time" != "n/a" ]; then
+#             echo "Service started at: $start_time"
+#             # Calculate uptime
+#             start_epoch=$(date -d "$start_time" +%s 2>/dev/null || echo "0")
+#             current_epoch=$(date +%s)
+#             if [ "$start_epoch" -gt 0 ]; then
+#               uptime_seconds=$((current_epoch - start_epoch))
+#               uptime_days=$((uptime_seconds / 86400))
+#               uptime_hours=$(((uptime_seconds % 86400) / 3600))
+#               uptime_minutes=$(((uptime_seconds % 3600) / 60))
+#               echo "Uptime: ${{uptime_days}}d ${{uptime_hours}}h ${{uptime_minutes}}m"
+#             else
+#               echo "Uptime: Unable to calculate"
+#             fi
+#           else
+#             echo "Service start time: Not available"
+#             echo "Uptime: Not available"
+#           fi
+#         else
+#           echo "Service is not active"
+#         fi
+#       register: service_uptime
+#       when: service_exists
+      
+#     - name: Display comprehensive service status
+#       ansible.builtin.debug:
+#         msg: |
+#           ===========================================
+#           SERVICE STATUS REPORT for {{{{ inventory_hostname }}}}
+#           ===========================================
+#           Service Name: {{{{ service_name }}}}
+#           Active State: {{{{ service_status.status.ActiveState | default('unknown') }}}}
+#           Sub State: {{{{ service_status.status.SubState | default('unknown') }}}}
+#           Load State: {{{{ service_status.status.LoadState | default('unknown') }}}}
+#           Unit File State: {{{{ service_status.status.UnitFileState | default('unknown') }}}}
+#           Main PID: {{{{ service_status.status.MainPID | default('N/A') }}}}
+          
+#           {{{{ service_uptime.stdout | default('Uptime info not available') }}}}
+          
+#           Status: {{{{ 'ACTIVE' if service_status.status.ActiveState == 'active' else 'INACTIVE/DEAD' }}}}
+#           Enabled: {{{{ 'YES' if service_status.status.UnitFileState in ['enabled', 'enabled-runtime'] else 'NO' }}}}
+#           ===========================================
+#       when: service_exists and operation_type == 'status'
+      
+#     - name: Perform systemd START operation
+#       ansible.builtin.systemd:
+#         name: "{{{{ service_name }}}}"
+#         state: started
+#         enabled: yes
+#       register: start_result
+#       when: service_exists and operation_type == 'start'
+      
+#     - name: Perform systemd STOP operation
+#       ansible.builtin.systemd:
+#         name: "{{{{ service_name }}}}"
+#         state: stopped
+#       register: stop_result
+#       when: service_exists and operation_type == 'stop'
+      
+#     - name: Perform systemd RESTART operation
+#       ansible.builtin.systemd:
+#         name: "{{{{ service_name }}}}"
+#         state: restarted
+#         enabled: yes
+#       register: restart_result
+#       when: service_exists and operation_type == 'restart'
+      
+#     - name: Verify operation result
+#       ansible.builtin.systemd:
+#         name: "{{{{ service_name }}}}"
+#       register: post_operation_status
+#       when: service_exists and operation_type in ['start', 'stop', 'restart']
+#       failed_when: false
+      
+#     - name: Report operation success
+#       ansible.builtin.debug:
+#         msg: |
+#           ===========================================
+#           OPERATION RESULT for {{{{ inventory_hostname }}}}
+#           ===========================================
+#           Service: {{{{ service_name }}}}
+#           Operation: {{{{ operation_type | upper }}}}
+#           Result: SUCCESS
+#           New Status: {{{{ post_operation_status.status.ActiveState | default('unknown') }}}} ({{{{ post_operation_status.status.SubState | default('unknown') }}}})
+#           Enabled: {{{{ 'YES' if post_operation_status.status.UnitFileState in ['enabled', 'enabled-runtime'] else 'NO' }}}}
+#           ===========================================
+#       when: service_exists and operation_type in ['start', 'stop', 'restart']
+      
+#     - name: Get final service status for logging
+#       ansible.builtin.shell: systemctl is-active {{{{ service_name }}}} || echo "inactive"
+#       register: final_status
+#       when: service_exists
+      
+#     - name: Log final status
+#       ansible.builtin.debug:
+#         msg: "Final service status on {{{{ inventory_hostname }}}}: {{{{ final_status.stdout | default('unknown') }}}}"
+#       when: service_exists
+# """)
+        
+#         # Generate inventory file for ansible
+#         inventory_file = f"/tmp/inventory_{deployment_id}"
+        
+#         with open(inventory_file, 'w') as f:
+#             f.write("[systemd_targets]\n")
+#             for vm_name in vms:
+#                 # Find VM IP from inventory
+#                 vm = next((v for v in inventory["vms"] if v["name"] == vm_name), None)
+#                 if vm:
+#                     f.write(f"{vm_name} ansible_host={vm['ip']} ansible_user=infadm ansible_ssh_private_key_file=/root/.ssh/id_rsa ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ControlMaster=auto -o ControlPath=/tmp/ansible-ssh/%h-%p-%r -o ControlPersist=60s'\n")
+        
+#         # Run ansible playbook
+#         env_vars = os.environ.copy()
+#         env_vars["ANSIBLE_CONFIG"] = "/etc/ansible/ansible.cfg"
+#         env_vars["ANSIBLE_HOST_KEY_CHECKING"] = "False"
+#         env_vars["ANSIBLE_SSH_CONTROL_PATH"] = "/tmp/ansible-ssh/%h-%p-%r"
+#         env_vars["ANSIBLE_SSH_CONTROL_PATH_DIR"] = "/tmp/ansible-ssh"
+        
+#         cmd = ["ansible-playbook", "-i", inventory_file, playbook_file, "-v"]
+        
+#         log_message(deployment_id, f"Executing: {' '.join(cmd)}")
+#         logger.info(f"Executing Ansible command: {' '.join(cmd)}")
+        
+#         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env_vars)
+        
+#         for line in process.stdout:
+#             log_message(deployment_id, line.strip())
+        
+#         process.wait()
+        
+#         if process.returncode == 0:
+#             log_message(deployment_id, f"SUCCESS: Systemd {operation} operation completed successfully")
+#             deployments[deployment_id]["status"] = "success"
+#             log_message(deployment_id, f"=== ANSIBLE OUTPUT ===")
+#             log_message(deployment_id, process.stdout)
+#             deployments[deployment_id]["status"] = "completed"
+#             logger.info(f"Systemd operation {deployment_id} completed successfully")
+#         else:
+#             log_message(deployment_id, f"ERROR: Systemd {operation} operation failed")
+#             deployments[deployment_id]["status"] = "failed"
+#             logger.error(f"Systemd operation {deployment_id} failed with return code {process.returncode}")
+#             log_message(deployment_id, f"=== ERROR OUTPUT ===")
+#             log_message(deployment_id, process.stderr)
+#             log_message(deployment_id, f"=== STDOUT ===")
+#             log_message(deployment_id, process.stdout)
+        
+#         # Clean up temporary files
+#         try:
+#             os.remove(playbook_file)
+#             os.remove(inventory_file)
+#         except Exception as e:
+#             logger.warning(f"Error cleaning up temporary files: {str(e)}")
+        
+#         # Save deployment history after completion
+#         save_deployment_history()
+        
+#     except Exception as e:
+#         log_message(deployment_id, f"ERROR: Exception during systemd operation: {str(e)}")
+#         deployments[deployment_id]["status"] = "failed"
+#         logger.exception(f"Exception in systemd operation {deployment_id}: {str(e)}")
+#         save_deployment_history()
 
 if __name__ == '__main__':
     from waitress import serve

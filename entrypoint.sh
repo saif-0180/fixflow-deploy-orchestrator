@@ -82,7 +82,8 @@ yaml_valid_extensions = .yaml, .yml, .json
 [privilege_escalation]
 become = True
 become_method = sudo
-become_user = infadm
+become_user= infadm
+become_ask_pass = False
 
 [ssh_connection]
 pipelining = True
