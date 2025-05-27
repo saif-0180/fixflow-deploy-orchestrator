@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -12,7 +12,6 @@ import {
   SelectTrigger, 
   SelectValue 
 } from "@/components/ui/select";
-import { RefreshCcw } from 'lucide-react';
 import LogDisplay from '@/components/LogDisplay';
 import VMSelector from '@/components/VMSelector';
 
@@ -46,15 +45,9 @@ const FileOperations: React.FC = () => {
     'root': '/root'
   });
 
-  // Enhanced rollback state management
+  // New state for managing rollbacks
+  const [lastDeployments, setLastDeployments] = useState<any[]>([]);
   const [selectedRollbackId, setSelectedRollbackId] = useState<string | null>(null);
-  const [selectedDeploymentDetails, setSelectedDeploymentDetails] = useState<any | null>(null);
-  
-  // Auto-refresh functionality
-  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState<boolean>(false);
-  const [refreshInterval, setRefreshInterval] = useState<number>(30000); // 30 seconds default
-  const [lastRefreshTime, setLastRefreshTime] = useState<Date | null>(null);
-  const [manualRefreshLoading, setManualRefreshLoading] = useState<boolean>(false);
 
   // Fetch all FTs
   const { data: fts = [] } = useQuery({
@@ -84,67 +77,61 @@ const FileOperations: React.FC = () => {
     refetchOnWindowFocus: false,
   });
 
-  // Enhanced recent file deployments query with auto-refresh
+  // Fetch recent file deployments for rollback (new query)
+
   const {
     data: recentFileDeployments = [],
     refetch: refetchRecentFileDeployments,
-    isLoading: isLoadingDeployments,
-    isError: isDeploymentsError,
-    error: deploymentsError
   } = useQuery({
     queryKey: ['recent-file-deployments'],
     queryFn: async () => {
       try {
         const response = await fetch('/api/deployments/files/recent');
         if (!response.ok) {
-          const errorText = await response.text();
-          console.error(`Failed to fetch recent deployments: ${errorText}`);
-          throw new Error(`HTTP ${response.status}: ${errorText}`);
+          console.error(`Failed to fetch recent deployments: ${await response.text()}`);
+          return [];
         }
         const data = await response.json();
-        const filteredData = data
+        return data
           .filter((deployment: any) => 
             deployment.type === 'file' && deployment.status === 'success'
           )
-          .slice(0, 15); // Get last 15 successful file deployments
-        
-        setLastRefreshTime(new Date());
-        return filteredData;
+          .slice(0, 10); // Get last 10 successful file deployments
       } catch (error) {
         console.error('Error fetching recent deployments:', error);
-        throw error;
+        return [];
       }
     },
     refetchOnWindowFocus: false,
-    staleTime: 10000, // 10 seconds
-    refetchInterval: autoRefreshEnabled ? refreshInterval : false,
+    staleTime: 300000, // 5 minutes
   });
-
-  // Manual refresh function
-  const handleManualRefresh = useCallback(async () => {
-    setManualRefreshLoading(true);
-    try {
-      await refetchRecentFileDeployments();
-      toast({
-        title: "Refresh Complete",
-        description: "Deployment list has been updated.",
-      });
-    } catch (error) {
-      toast({
-        title: "Refresh Failed",
-        description: error instanceof Error ? error.message : "Failed to refresh deployment list",
-        variant: "destructive",
-      });
-    } finally {
-      setManualRefreshLoading(false);
+  // const { data: recentFileDeployments = [] } = useQuery({
+  //   queryKey: ['recent-file-deployments'],
+  //   queryFn: async () => {
+  //     try {
+  //       const response = await fetch('/api/deployments/files/recent');
+  //       if (!response.ok) {
+  //         console.error(`Failed to fetch recent deployments: ${await response.text()}`);
+  //         return [];
+  //       }
+  //       const data = await response.json();
+  //       return data.filter((deployment: any) => 
+  //         deployment.type === 'file' && deployment.status === 'success'
+  //       ).slice(0, 10); // Get last 10 successful file deployments
+  //     } catch (error) {
+  //       console.error('Error fetching recent deployments:', error);
+  //       return [];
+  //     }
+  //   },
+  //   refetchOnWindowFocus: false,
+  //   staleTime: 300000, // 5 minutes
+  // });
+  
+  // Update lastDeployments when recentFileDeployments changes
+  useEffect(() => {
+    if (recentFileDeployments && recentFileDeployments.length > 0) {
+      setLastDeployments(recentFileDeployments);
     }
-  }, [refetchRecentFileDeployments, toast]);
-
-  // Handle rollback selection change
-  const handleRollbackSelection = useCallback((deploymentId: string) => {
-    setSelectedRollbackId(deploymentId);
-    const selectedDeployment = recentFileDeployments.find((d: any) => d.id === deploymentId);
-    setSelectedDeploymentDetails(selectedDeployment || null);
   }, [recentFileDeployments]);
 
   // Deploy mutation
@@ -168,8 +155,7 @@ const FileOperations: React.FC = () => {
       });
       
       if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || 'Failed to deploy');
+        throw new Error('Failed to deploy');
       }
       
       const data = await response.json();
@@ -183,13 +169,8 @@ const FileOperations: React.FC = () => {
         description: "File deployment has been initiated.",
       });
       
-      // Start polling for logs and refresh deployment list
+      // Start polling for logs
       pollLogs(data.deploymentId, setFileLogs, setFileOperationStatus);
-      
-      // Refresh deployment list to include new deployment
-      setTimeout(() => {
-        refetchRecentFileDeployments();
-      }, 2000);
     },
     onError: (error) => {
       setFileOperationStatus('failed');
@@ -201,7 +182,7 @@ const FileOperations: React.FC = () => {
     },
   });
 
-  // Enhanced rollback mutation
+  // Rollback mutation (newly added)
   const rollbackMutation = useMutation({
     mutationFn: async (deploymentId: string) => {
       setFileOperationStatus('loading');
@@ -213,8 +194,7 @@ const FileOperations: React.FC = () => {
       });
       
       if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || 'Failed to rollback deployment');
+        throw new Error('Failed to rollback deployment');
       }
       
       const data = await response.json();
@@ -225,26 +205,20 @@ const FileOperations: React.FC = () => {
     onSuccess: (data) => {
       toast({
         title: "Rollback Started",
-        description: "File rollback has been initiated successfully.",
+        description: "File rollback has been initiated.",
       });
       
       // Start polling for logs
       pollLogs(data.deploymentId, setFileLogs, setFileOperationStatus);
       
-      // Clear rollback selection and refresh list
+      // Clear rollback selection after initiating
       setSelectedRollbackId(null);
-      setSelectedDeploymentDetails(null);
-      
-      // Refresh deployment list
-      setTimeout(() => {
-        refetchRecentFileDeployments();
-      }, 2000);
     },
     onError: (error) => {
       setFileOperationStatus('failed');
       toast({
         title: "Rollback Failed",
-        description: error instanceof Error ? error.message : "An unknown error occurred during rollback",
+        description: error instanceof Error ? error.message : "An unknown error occurred",
         variant: "destructive",
       });
     },
@@ -268,8 +242,7 @@ const FileOperations: React.FC = () => {
       });
       
       if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || 'Validation failed');
+        throw new Error('Validation failed');
       }
       
       return response.json();
@@ -279,6 +252,7 @@ const FileOperations: React.FC = () => {
         title: "Validation Complete",
         description: "File checksum validation has been completed.",
       });
+      // Add validation results to logs
       if (data.results) {
         data.results.forEach((result: any) => {
           const checksum = result.cksum ? `Checksum=${result.cksum}` : 'No checksum available';
@@ -296,7 +270,7 @@ const FileOperations: React.FC = () => {
     onError: (error) => {
       toast({
         title: "Validation Failed",
-        description: error instanceof Error ? error.message : "An unknown error occurred during validation",
+        description: error instanceof Error ? error.message : "An unknown error occurred",
         variant: "destructive",
       });
     },
@@ -307,6 +281,7 @@ const FileOperations: React.FC = () => {
     mutationFn: async () => {
       setShellOperationStatus('loading');
       
+      // Determine the working directory
       let workingDirectory = shellWorkingDir;
       
       if (useUserHomePath && !shellWorkingDir) {
@@ -343,6 +318,7 @@ const FileOperations: React.FC = () => {
         description: "Shell command has been initiated.",
       });
       
+      // Start polling for logs
       pollLogs(data.deploymentId || data.commandId, setShellLogs, setShellOperationStatus);
     },
     onError: (error) => {
@@ -359,12 +335,14 @@ const FileOperations: React.FC = () => {
   const pollLogs = (id: string, logSetter: React.Dispatch<React.SetStateAction<string[]>>, statusSetter: React.Dispatch<React.SetStateAction<'idle' | 'loading' | 'running' | 'success' | 'failed' | 'completed'>>) => {
     if (!id) return;
     
+    // Start with a clear log display
     logSetter([]);
     statusSetter('running');
     
     let pollCount = 0;
     let lastLogLength = 0;
     
+    // Set up polling interval
     const pollInterval = setInterval(async () => {
       try {
         const response = await fetch(`/api/deploy/${id}/logs`);
@@ -376,6 +354,7 @@ const FileOperations: React.FC = () => {
         if (data.logs) {
           logSetter(data.logs);
           
+          // Check if operation is explicitly complete
           if (data.status === 'completed' || data.status === 'success') {
             statusSetter('success');
             clearInterval(pollInterval);
@@ -388,9 +367,10 @@ const FileOperations: React.FC = () => {
             return;
           }
           
+          // Check for implicit completion (logs not changing)
           if (data.logs.length === lastLogLength) {
             pollCount++;
-            if (pollCount >= 5) {
+            if (pollCount >= 5) { // After 5 consecutive polls with no changes
               console.log('Operation appears complete - logs have not changed');
               statusSetter('success');
               clearInterval(pollInterval);
@@ -402,6 +382,7 @@ const FileOperations: React.FC = () => {
           }
         }
         
+        // Stop polling after 2 minutes as a safeguard
         if (pollCount > 120) {
           console.log('Operation timed out after 2 minutes');
           statusSetter(data.status === 'running' ? 'running' : 'completed');
@@ -409,29 +390,33 @@ const FileOperations: React.FC = () => {
         }
       } catch (error) {
         console.error('Error fetching logs:', error);
+        // Don't clear interval yet, try a few more times
         pollCount += 5;
-        if (pollCount > 20) {
+        if (pollCount > 20) {  // After several failures, give up
           statusSetter('failed');
           clearInterval(pollInterval);
         }
       }
-    }, 1000);
+    }, 1000); // Poll every second
     
+    // Clean up on unmount
     return () => {
       clearInterval(pollInterval);
     };
   };
 
+  // Handle VM selection changes for file operations
   const handleVMSelectionChange = (vms: string[]) => {
     setSelectedVMs(vms);
   };
   
+  // Handle VM selection changes for shell operations
   const handleShellVMSelectionChange = (vms: string[]) => {
     setShellSelectedVMs(vms);
   };
 
   const handleDeploy = (e: React.MouseEvent) => {
-    e.preventDefault();
+    e.preventDefault(); // Prevent the default action
     
     if (!selectedFt) {
       toast({
@@ -473,6 +458,7 @@ const FileOperations: React.FC = () => {
     deployMutation.mutate();
   };
 
+  // New function to handle rollback
   const handleRollback = (e: React.MouseEvent) => {
     e.preventDefault();
     
@@ -485,18 +471,14 @@ const FileOperations: React.FC = () => {
       return;
     }
     
-    const deploymentInfo = selectedDeploymentDetails 
-      ? `${selectedDeploymentDetails.ft}/${selectedDeploymentDetails.file}`
-      : 'this deployment';
-    
-    if (window.confirm(`Are you sure you want to rollback ${deploymentInfo}? This will restore the previous version of the file and cannot be undone easily.`)) {
+    if (window.confirm("Are you sure you want to rollback this deployment? This will restore the previous version of the file.")) {
       setFileLogs([]);
       rollbackMutation.mutate(selectedRollbackId);
     }
   };
 
   const handleRunShellCommand = (e: React.MouseEvent) => {
-    e.preventDefault();
+    e.preventDefault(); // Prevent the default action
     
     if (!shellCommand) {
       toast({
@@ -520,12 +502,12 @@ const FileOperations: React.FC = () => {
     shellCommandMutation.mutate();
   };
 
+  // Format the deployment summary for the rollback dropdown
   const formatDeploymentSummary = (deployment: any): string => {
     if (!deployment) return '';
     
     const date = deployment.timestamp ? new Date(deployment.timestamp).toLocaleString() : 'Unknown date';
-    const vmCount = deployment.vms ? deployment.vms.length : 0;
-    return `${deployment.ft || 'Unknown'}/${deployment.file || 'Unknown'} (${vmCount} VMs) - ${date}`;
+    return `${deployment.ft || 'Unknown'}/${deployment.file || 'Unknown'} - ${date}`;
   };
 
   return (
@@ -535,7 +517,7 @@ const FileOperations: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="space-y-6">
           {/* File Deployment Section */}
-          <div className="space-y-4 bg-[#1a2b42] p-4 rounded-md">
+          <div className="space-y-4 bg-[#EEEEEE] p-4 rounded-md">
             <h3 className="text-lg font-medium text-[#F79B72]">File Deployment</h3>
 
             <div>
@@ -646,141 +628,36 @@ const FileOperations: React.FC = () => {
                   className="bg-[#2A4759] hover:bg-[#2A4759]/80 text-white"
                   disabled={!deploymentId || validateMutation.isPending}
                 >
-                  {validateMutation.isPending ? "Validating..." : "Validate"}
+                  Validate
                 </Button>
               </div>
             </div>
             
-            {/* Enhanced Rollback Section */}
-            <div className="mt-4 pt-4 border-t border-[#F79B72]/30">
-              <div className="flex items-center justify-between mb-3">
-                <h4 className="text-md font-medium text-[#F79B72]">Rollback Previous Deployment</h4>
-                <div className="flex items-center space-x-2 text-sm text-[#EEEEEE]">
-                  <span>({recentFileDeployments.length} available)</span>
-                </div>
-              </div>
-              
-              {/* Auto-refresh controls */}
-              <div className="bg-[#2A4759]/50 p-3 rounded mb-3 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <Checkbox 
-                      id="auto-refresh" 
-                      checked={autoRefreshEnabled} 
-                      onCheckedChange={(checked) => setAutoRefreshEnabled(checked === true)}
-                    />
-                    <Label htmlFor="auto-refresh" className="text-[#EEEEEE] text-sm">Auto-refresh</Label>
-                    {autoRefreshEnabled && (
-                      <span className="text-xs text-green-400 font-medium">Active</span>
-                    )}
-                  </div>
-                  <Button 
-                    onClick={handleManualRefresh}
-                    size="sm"
-                    variant="outline"
-                    className="h-7 px-2 border-[#F79B72] text-[#F79B72] hover:bg-[#F79B72] hover:text-[#2A4759]"
-                    disabled={manualRefreshLoading || isLoadingDeployments}
-                  >
-                    <RefreshCcw className={`h-3 w-3 ${manualRefreshLoading ? 'animate-spin' : ''}`} />
-                  </Button>
-                </div>
-                
-                {autoRefreshEnabled && (
-                  <div className="flex items-center space-x-2">
-                    <Label className="text-xs text-[#EEEEEE]">Interval:</Label>
-                    <Select 
-                      value={refreshInterval.toString()} 
-                      onValueChange={(value) => setRefreshInterval(parseInt(value))}
-                    >
-                      <SelectTrigger className="h-6 w-20 text-xs border-[#F79B72]/50 bg-[#1a2b42] text-[#EEEEEE]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="10000">10s</SelectItem>
-                        <SelectItem value="30000">30s</SelectItem>
-                        <SelectItem value="60000">1m</SelectItem>
-                        <SelectItem value="300000">5m</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-                
-                {lastRefreshTime && (
-                  <div className="text-xs text-[#EEEEEE]/70">
-                    Last updated: {lastRefreshTime.toLocaleTimeString()}
-                  </div>
-                )}
-              </div>
-
-              {/* Error state */}
-              {isDeploymentsError && (
-                <div className="bg-red-900/20 border border-red-500/50 p-2 rounded mb-3">
-                  <div className="text-sm text-red-400">
-                    Failed to load deployments: {deploymentsError instanceof Error ? deploymentsError.message : 'Unknown error'}
-                  </div>
-                </div>
-              )}
-
-              {/* Enhanced dropdown */}
+            {/* New Rollback Section */}
+            <div className="mt-4 pt-4 border-t border-[#2A4759]/30">
+              <h4 className="text-md font-medium text-[#F79B72] mb-2">Rollback Previous Deployment</h4>
               <div>
                 <Label htmlFor="rollback-select" className="text-[#F79B72]">Select Deployment</Label>
-                <div className="relative">
-                  <Select 
-                    value={selectedRollbackId || ''} 
-                    onValueChange={handleRollbackSelection}
-                    disabled={recentFileDeployments.length === 0 || isLoadingDeployments}
-                  >
-                    <SelectTrigger 
-                      id="rollback-select" 
-                      className="bg-[#1a2b42] border-[#F79B72] text-[#EEEEEE] pr-8"
-                    >
-                      <SelectValue 
-                        placeholder={
-                          isLoadingDeployments 
-                            ? "Loading deployments..." 
-                            : recentFileDeployments.length === 0 
-                              ? "No deployments available" 
-                              : "Select a deployment"
-                        } 
-                        className="text-[#EEEEEE]" 
-                      />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-40 bg-[#1a2b42] border-[#F79B72]">
-                      {recentFileDeployments.map((deployment) => (
-                        <SelectItem key={deployment.id} value={deployment.id} className="text-sm text-[#EEEEEE] hover:bg-[#F79B72] hover:text-[#2A4759]">
-                          {formatDeploymentSummary(deployment)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {isLoadingDeployments && (
-                    <RefreshCcw className="absolute right-8 top-1/2 transform -translate-y-1/2 h-3 w-3 animate-spin text-[#F79B72]" />
-                  )}
-                </div>
+                <Select 
+                  value={selectedRollbackId || ''} 
+                  onValueChange={setSelectedRollbackId}
+                  disabled={lastDeployments.length === 0}
+                >
+                <Select onOpenChange={(open) => open && refetchDeployments()}></Select>
+                  <SelectTrigger id="rollback-select" className="bg-[#EEEEEE] border-[#2A4759] text-[#2A4759]">
+                    <SelectValue placeholder="Select a deployment" className="text-[#2A4759]" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {lastDeployments.map((deployment) => (
+                      <SelectItem key={deployment.id} value={deployment.id}>
+                        {formatDeploymentSummary(deployment)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-
-              {/* Selected deployment details */}
-              {selectedDeploymentDetails && (
-                <div className="mt-2 p-2 bg-blue-900/20 border border-blue-500/50 rounded text-xs">
-                  <div className="font-medium text-blue-400">Deployment Details:</div>
-                  <div className="text-blue-300">
-                    <div>FT: {selectedDeploymentDetails.ft}</div>
-                    <div>File: {selectedDeploymentDetails.file}</div>
-                    <div>User: {selectedDeploymentDetails.user}</div>
-                    <div>Target: {selectedDeploymentDetails.targetPath}</div>
-                    <div>VMs: {selectedDeploymentDetails.vms ? selectedDeploymentDetails.vms.join(', ') : 'N/A'}</div>
-                  </div>
-                </div>
-              )}
-
-              {/* Warning message */}
-              {selectedRollbackId && (
-                <div className="mt-2 p-2 bg-amber-900/20 border border-amber-500/50 rounded text-xs text-amber-300">
-                  <strong>Warning:</strong> Rolling back will restore the previous version of the file. This action should be used carefully in production environments.
-                </div>
-              )}
               
-              <div className="mt-3">
+              <div className="mt-2">
                 <Button 
                   type="button"
                   onClick={handleRollback} 
@@ -803,6 +680,7 @@ const FileOperations: React.FC = () => {
                 value={shellSelectedUser} 
                 onValueChange={(value) => {
                   setShellSelectedUser(value);
+                  // Reset working directory if user home is checked
                   if (useUserHomePath) {
                     setShellWorkingDir('');
                   }
@@ -887,8 +765,9 @@ const FileOperations: React.FC = () => {
           </div>
         </div>
         
-        {/* Logs Section */}
+        {/* Logs Section - Aligned to match respective operation sections */}
         <div className="space-y-6">
+          {/* File Deployment Logs */}
           <div>
             <LogDisplay 
               logs={fileLogs} 
@@ -899,6 +778,7 @@ const FileOperations: React.FC = () => {
             />
           </div>
           
+          {/* Shell Command Logs */}
           <div>
             <LogDisplay 
               logs={shellLogs} 
@@ -915,4 +795,3 @@ const FileOperations: React.FC = () => {
 };
 
 export default FileOperations;
-

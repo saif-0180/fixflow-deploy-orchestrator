@@ -1,9 +1,9 @@
 
 {
   "vms": [
-    {"name": "batch1", "type": "batch", "ip": "54.166.16.2"},
-    {"name": "airflow", "type": "airflow", "ip": "3.91.134.15"},
-    {"name": "imdg2", "type": "imdg", "ip": "34.238.239.229"}
+    {"name": "batch1", "type": "batch", "ip": "54.226.71.182"},
+    {"name": "airflow", "type": "airflow", "ip": "54.157.231.108"},
+    {"name": "imdg2", "type": "imdg", "ip": "18.234.100.25"}
   ],
   "users": ["infadm", "abpwrk1", "root"],
   "systemd_services": ["docker.service", "postgresql-15.service", "zookeeper"]
