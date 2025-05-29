@@ -24,7 +24,7 @@ from routes.db_routes import db_routes
 app = Flask(__name__, static_folder='../frontend/dist')
 
 # Register the blueprint
-app.register_blueprint(db_routes, url_prefix='/api')
+app.register_blueprint(db_routes)
 
 #app.register_blueprint(db_routes)
 
@@ -78,6 +78,8 @@ logger.debug(f"Application log file: {APP_LOG_FILE}")
 # Dictionary to store deployment information
 deployments = {}
 
+# Store deployments in app config so it can be accessed via current_app
+app.config['deployments'] = deployments
 # Try to load previous deployments if they exist
 try:
     if os.path.exists(DEPLOYMENT_HISTORY_FILE):
@@ -123,32 +125,46 @@ try:
         inventory = json.load(f)
     logger.info(f"Loaded inventory with {len(inventory.get('vms', []))} VMs")
 except (FileNotFoundError, json.JSONDecodeError) as e:
-    logger.warning(f"Error loading inventory: {str(e)}")
-    # Default inventory structure
-    inventory = {
-        "vms": [
-            {"name": "batch1", "type": "batch", "ip": "192.168.1.10"},
-            {"name": "batch2", "type": "batch", "ip": "192.168.1.11"},
-            {"name": "imdg1", "type": "imdg", "ip": "192.168.1.20"},
-            {"name": "imdg2", "type": "imdg", "ip": "192.168.1.21"},
-            {"name": "airflow", "type": "airflow", "ip": "192.168.1.30"}
-        ],
-        "users": ["infadm", "abpwrk1", "root"],
-        "db_users": ["postgres", "dbadmin"],
-        "systemd_services": ["hazelcast", "kafka", "zookeeper", "airflow-scheduler"]
-    }
-    with open(INVENTORY_FILE, 'w') as f:
-        json.dump(inventory, f)
-    logger.info("Created default inventory configuration")
+    logger.error(f"Error loading inventory: {str(e)} - Please create/fix inventory.json manually")
+    inventory = {"vms": [], "users": [], "systemd_services": []}
+    # Don't save the empty inventory - let user create it manually
 
-# Function to save inventory
-def save_inventory():
-    try:
-        with open(INVENTORY_FILE, 'w') as f:
-            json.dump(inventory, f)
-        logger.info("Saved inventory configuration")
-    except Exception as e:
-        logger.error(f"Error saving inventory: {str(e)}")
+
+
+# INVENTORY_FILE = os.environ.get('INVENTORY_FILE', '/app/inventory/inventory.json')
+# os.makedirs(os.path.dirname(INVENTORY_FILE), exist_ok=True)
+
+# try:
+#     with open(INVENTORY_FILE, 'r') as f:
+#         inventory = json.load(f)
+#     logger.info(f"Loaded inventory with {len(inventory.get('vms', []))} VMs")
+# except (FileNotFoundError, json.JSONDecodeError) as e:
+#     logger.warning(f"Error loading inventory: {str(e)}")
+#     # Default inventory structure
+#     inventory = {
+#         "vms": [
+#             {"name": "batch1", "type": "batch", "ip": "192.168.1.10"},
+#             {"name": "batch2", "type": "batch", "ip": "192.168.1.11"},
+#             {"name": "imdg1", "type": "imdg", "ip": "192.168.1.20"},
+#             {"name": "imdg2", "type": "imdg", "ip": "192.168.1.21"},
+#             {"name": "airflow", "type": "airflow", "ip": "192.168.1.30"}
+#         ],
+#         "users": ["infadm", "abpwrk1", "root"],
+#         "db_users": ["postgres", "dbadmin"],
+#         "systemd_services": ["hazelcast", "kafka", "zookeeper", "airflow-scheduler"]
+#     }
+#     with open(INVENTORY_FILE, 'w') as f:
+#         json.dump(inventory, f)
+#     logger.info("Created default inventory configuration")
+
+# # Function to save inventory
+# def save_inventory():
+#     try:
+#         with open(INVENTORY_FILE, 'w') as f:
+#             json.dump(inventory, f)
+#         logger.info("Saved inventory configuration")
+#     except Exception as e:
+#         logger.error(f"Error saving inventory: {str(e)}")
 
 # Function to save deployment history with backup
 
@@ -1452,32 +1468,99 @@ def get_recent_file_deployments():
         return jsonify({"error": "Failed to fetch recent deployments"}), 500
 
 # API to get logs for a specific deployment
+
+
 @app.route('/api/deploy/<deployment_id>/logs')
 def get_deployment_logs(deployment_id):
     logger.info(f"Getting logs for deployment: {deployment_id}")
+    
+    def find_deployment_with_retry(deployment_id, max_retries=3):
+        """Find deployment with retry logic for race conditions"""
+        
+        for attempt in range(max_retries):
+            logger.debug(f"Attempt {attempt + 1} to find deployment {deployment_id}")
+            
+            # First check in-memory deployments
+            if deployment_id in deployments:
+                logger.info(f"Found deployment {deployment_id} in memory on attempt {attempt + 1}")
+                return deployments[deployment_id]
+            
+            # If not found in memory, try to load from history file
+            logger.debug(f"Deployment {deployment_id} not in memory, checking history file (attempt {attempt + 1})")
+            
+            try:
+                if os.path.exists(DEPLOYMENT_HISTORY_FILE):
+                    # Add increasing delay for each retry to handle race conditions
+                    if attempt > 0:
+                        delay = 0.5 * attempt
+                        logger.debug(f"Waiting {delay}s before reading file (attempt {attempt + 1})")
+                        time.sleep(delay)
+                    
+                    with open(DEPLOYMENT_HISTORY_FILE, 'r') as f:
+                        saved_deployments = json.load(f)
+                        
+                        if deployment_id in saved_deployments:
+                            logger.info(f"Found deployment {deployment_id} in history file on attempt {attempt + 1}")
+                            deployment = saved_deployments[deployment_id]
+                            
+                            # Add it back to memory for future requests
+                            deployments[deployment_id] = deployment
+                            logger.debug(f"Added deployment {deployment_id} back to memory")
+                            
+                            return deployment
+                        else:
+                            logger.debug(f"Deployment {deployment_id} not found in history file (attempt {attempt + 1})")
+                            
+                else:
+                    logger.warning(f"History file {DEPLOYMENT_HISTORY_FILE} does not exist (attempt {attempt + 1})")
+                    
+            except json.JSONDecodeError as e:
+                logger.error(f"JSON decode error on attempt {attempt + 1}: {str(e)}")
+                if attempt == max_retries - 1:  # Last attempt
+                    return None
+                # Continue to next attempt
+                
+            except Exception as e:
+                logger.error(f"Error reading deployment history on attempt {attempt + 1}: {str(e)}")
+                if attempt == max_retries - 1:  # Last attempt
+                    return None
+                # Continue to next attempt
+            
+            # If this wasn't the last attempt, wait a bit before retrying
+            if attempt < max_retries - 1:
+                time.sleep(0.2 * (attempt + 1))
+        
+        logger.error(f"Could not find deployment {deployment_id} after {max_retries} attempts")
+        return None
     
     # Check if client expects server-sent events
     accept_header = request.headers.get('Accept', '')
     if 'text/event-stream' in accept_header:
         # Return SSE stream for real-time logs
         def generate():
-            if deployment_id in deployments:
-                deployment = deployments[deployment_id]
+            deployment = find_deployment_with_retry(deployment_id)
+            if deployment:
                 # First send all existing logs
                 for log in deployment.get("logs", []):
                     yield f"data: {json.dumps({'message': log})}\n\n"
 
                 # Send current status
-                yield f"data: {json.dumps({'status': deployment.get('status', 'running')})}\n\n"
+                current_status = deployment.get('status', 'running')
+                yield f"data: {json.dumps({'status': current_status})}\n\n"
 
                 # Return if deployment is already completed
-                if deployment.get("status") in ["success", "failed"]:
+                if current_status in ["success", "failed"]:
+                    logger.info(f"Deployment {deployment_id} is already completed with status: {current_status}")
                     return
                 
-                # Otherwise, keep the connection open for new logs
+                # Otherwise, keep the connection open for new logs (only if still in memory)
                 last_log_count = len(deployment.get("logs", []))
-                while deployment_id in deployments:
-                    current_logs = deployments[deployment_id].get("logs", [])
+                timeout_count = 0
+                max_timeout = 300  # 5 minutes
+                
+                while deployment_id in deployments and timeout_count < max_timeout:
+                    current_deployment = deployments[deployment_id]
+                    current_logs = current_deployment.get("logs", [])
                     current_count = len(current_logs)
                     
                     # Send new logs
@@ -1487,25 +1570,90 @@ def get_deployment_logs(deployment_id):
                         last_log_count = current_count
                     
                     # Check if deployment status has changed
-                    status = deployments[deployment_id].get("status")
+                    status = current_deployment.get("status", "running")
                     if status in ["success", "failed"]:
                         yield f"data: {json.dumps({'status': status})}\n\n"
                         break
                     
                     time.sleep(1)
+                    timeout_count += 1
+                
+                if timeout_count >= max_timeout:
+                    logger.warning(f"SSE stream timeout for deployment {deployment_id}")
+                    yield f"data: {json.dumps({'error': 'Stream timeout'})}\n\n"
+                    
             else:
                 yield f"data: {json.dumps({'error': 'Deployment not found'})}\n\n"
 
         return Response(stream_with_context(generate()), mimetype='text/event-stream')
     else:
         # Return regular JSON response for non-streaming requests
-        if deployment_id in deployments:
+        deployment = find_deployment_with_retry(deployment_id)
+        if deployment:
             return jsonify({
-                "logs": deployments[deployment_id].get("logs", []),
-                "status": deployments[deployment_id].get("status", "unknown")
+                "deploymentId": deployment_id,
+                "logs": deployment.get("logs", []),
+                "status": deployment.get("status", "unknown"),
+                "timestamp": deployment.get("timestamp", 0),
+                "type": deployment.get("type", "unknown")
             })
         else:
+            logger.warning(f"Deployment {deployment_id} not found after all retry attempts")
             return jsonify({"error": "Deployment not found"}), 404
+# @app.route('/api/deploy/<deployment_id>/logs')
+# def get_deployment_logs(deployment_id):
+#     logger.info(f"Getting logs for deployment: {deployment_id}")
+    
+#     # Check if client expects server-sent events
+#     accept_header = request.headers.get('Accept', '')
+#     if 'text/event-stream' in accept_header:
+#         # Return SSE stream for real-time logs
+#         def generate():
+#             if deployment_id in deployments:
+#                 deployment = deployments[deployment_id]
+#                 # First send all existing logs
+#                 for log in deployment.get("logs", []):
+#                     yield f"data: {json.dumps({'message': log})}\n\n"
+
+#                 # Send current status
+#                 yield f"data: {json.dumps({'status': deployment.get('status', 'running')})}\n\n"
+
+#                 # Return if deployment is already completed
+#                 if deployment.get("status") in ["success", "failed"]:
+#                     return
+                
+#                 # Otherwise, keep the connection open for new logs
+#                 last_log_count = len(deployment.get("logs", []))
+#                 while deployment_id in deployments:
+#                     current_logs = deployments[deployment_id].get("logs", [])
+#                     current_count = len(current_logs)
+                    
+#                     # Send new logs
+#                     if current_count > last_log_count:
+#                         for i in range(last_log_count, current_count):
+#                             yield f"data: {json.dumps({'message': current_logs[i]})}\n\n"
+#                         last_log_count = current_count
+                    
+#                     # Check if deployment status has changed
+#                     status = deployments[deployment_id].get("status")
+#                     if status in ["success", "failed"]:
+#                         yield f"data: {json.dumps({'status': status})}\n\n"
+#                         break
+                    
+#                     time.sleep(1)
+#             else:
+#                 yield f"data: {json.dumps({'error': 'Deployment not found'})}\n\n"
+
+#         return Response(stream_with_context(generate()), mimetype='text/event-stream')
+#     else:
+#         # Return regular JSON response for non-streaming requests
+#         if deployment_id in deployments:
+#             return jsonify({
+#                 "logs": deployments[deployment_id].get("logs", []),
+#                 "status": deployments[deployment_id].get("status", "unknown")
+#             })
+#         else:
+#             return jsonify({"error": "Deployment not found"}), 404
 
 # API to get logs for a specific command
 @app.route('/api/command/<command_id>/logs')

@@ -1,8 +1,5 @@
-
 import React, { useRef, useEffect, useState } from 'react';
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Loader2 } from "lucide-react";
 
@@ -11,7 +8,6 @@ interface LogDisplayProps {
   height?: string;
   fixedHeight?: boolean;
   title?: string;
-  fixAutoScroll?: boolean;
   status?: 'idle' | 'loading' | 'running' | 'success' | 'failed' | 'completed';
 }
 
@@ -20,30 +16,51 @@ const LogDisplay: React.FC<LogDisplayProps> = ({
   height = "400px", 
   fixedHeight = true,
   title = "Logs",
-  fixAutoScroll = false,
   status = 'idle'
 }) => {
   const logEndRef = useRef<HTMLDivElement>(null);
-  const [autoScroll, setAutoScroll] = useState<boolean>(true);
   const [previousLogsLength, setPreviousLogsLength] = useState<number>(0);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const scrollViewportRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to bottom when logs change
+  // Auto-scroll to bottom when logs change - scroll only within the log container
   useEffect(() => {
-    if (autoScroll && logEndRef.current && logs.length !== previousLogsLength) {
+    if (logs.length !== previousLogsLength) {
       setTimeout(() => {
-        logEndRef.current?.scrollIntoView({ behavior: 'auto' });
+        // Try to find the actual scrollable viewport within ScrollArea
+        const scrollArea = scrollAreaRef.current;
+        if (scrollArea) {
+          const viewport = scrollArea.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement;
+          if (viewport) {
+            viewport.scrollTop = viewport.scrollHeight;
+          }
+        }
+        // Fallback to our ref
+        if (scrollViewportRef.current) {
+          scrollViewportRef.current.scrollTop = scrollViewportRef.current.scrollHeight;
+        }
         setPreviousLogsLength(logs.length);
-      }, 100);
+      }, 10);
     }
-  }, [logs, autoScroll, previousLogsLength]);
+  }, [logs, previousLogsLength]);
 
-  // Force scroll when status changes to success/completed
+  // Force scroll when status changes to success/completed - scroll only within the log container
   useEffect(() => {
-    if ((status === 'success' || status === 'completed') && logEndRef.current) {
+    if (status === 'success' || status === 'completed') {
       setTimeout(() => {
-        logEndRef.current?.scrollIntoView({ behavior: 'auto' });
-      }, 200);
+        // Try to find the actual scrollable viewport within ScrollArea
+        const scrollArea = scrollAreaRef.current;
+        if (scrollArea) {
+          const viewport = scrollArea.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement;
+          if (viewport) {
+            viewport.scrollTop = viewport.scrollHeight;
+          }
+        }
+        // Fallback to our ref
+        if (scrollViewportRef.current) {
+          scrollViewportRef.current.scrollTop = scrollViewportRef.current.scrollHeight;
+        }
+      }, 10);
     }
   }, [status]);
 
@@ -93,16 +110,6 @@ const LogDisplay: React.FC<LogDisplayProps> = ({
             </Badge>
           )}
         </div>
-        {!fixAutoScroll && (
-          <div className="flex items-center space-x-2">
-            <Label htmlFor="auto-scroll" className="text-sm text-gray-400">Auto-scroll</Label>
-            <Switch 
-              id="auto-scroll" 
-              checked={autoScroll} 
-              onCheckedChange={setAutoScroll}
-            />
-          </div>
-        )}
       </div>
       <ScrollArea 
         ref={scrollAreaRef}
@@ -113,26 +120,43 @@ const LogDisplay: React.FC<LogDisplayProps> = ({
           minHeight: fixedHeight ? height : "auto"
         }}
       >
-        {logs.length === 0 ? (
-          <p className="text-gray-400">No logs available. Start an operation to see logs here.</p>
-        ) : (
-          logs.map((log, index) => (
-            <div key={index} className="mb-1">
-              {log.includes('ERROR') || log.includes('FAILED') || log.includes('failed') || log.includes('error') ? (
-                <span className="text-red-400">{log}</span>
-              ) : log.includes('SUCCESS') || log.includes('COMPLETED') || log.includes('successfully') ? (
-                <span className="text-green-400">{log}</span>
-              ) : log.includes('WARNING') ? (
-                <span className="text-yellow-300">{log}</span>
-              ) : log.includes('Checksum=') ? (
-                <span className="text-blue-300">{log}</span>
-              ) : (
-                <span className="text-gray-200">{log}</span>
-              )}
-            </div>
-          ))
-        )}
-        <div ref={logEndRef} />
+        <div 
+          ref={scrollViewportRef}
+          className="h-full overflow-auto"
+          onScroll={(e) => {
+            // Prevent event bubbling to avoid page scroll
+            e.stopPropagation();
+          }}
+          onWheel={(e) => {
+            // Prevent wheel events from bubbling to parent
+            e.stopPropagation();
+          }}
+          onTouchMove={(e) => {
+            // Prevent touch scroll events from bubbling to parent
+            e.stopPropagation();
+          }}
+        >
+          {logs.length === 0 ? (
+            <p className="text-gray-400">No logs available. Start an operation to see logs here.</p>
+          ) : (
+            logs.map((log, index) => (
+              <div key={index} className="mb-1">
+                {log.includes('ERROR') || log.includes('FAILED') || log.includes('failed') || log.includes('error') ? (
+                  <span className="text-red-400">{log}</span>
+                ) : log.includes('SUCCESS') || log.includes('COMPLETED') || log.includes('successfully') ? (
+                  <span className="text-green-400">{log}</span>
+                ) : log.includes('WARNING') ? (
+                  <span className="text-yellow-300">{log}</span>
+                ) : log.includes('Checksum=') ? (
+                  <span className="text-blue-300">{log}</span>
+                ) : (
+                  <span className="text-gray-200">{log}</span>
+                )}
+              </div>
+            ))
+          )}
+          <div ref={logEndRef} />
+        </div>
       </ScrollArea>
     </div>
   );

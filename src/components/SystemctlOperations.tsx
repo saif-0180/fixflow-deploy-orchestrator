@@ -334,6 +334,8 @@ const SystemctlOperations = () => {
   }, []);
 
   return (
+
+    
     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
       <Card className="bg-[#1a2b42] text-[#EEEEEE]">
         <CardHeader>
