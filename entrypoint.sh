@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Get the current user's home directory
-USER_HOME=${HOME:-/home/infadm}
+USER_HOME=${HOME:-/home/users/infadm}
 CURRENT_USER=$(whoami)
 
 echo "Running as user: $CURRENT_USER with home: $USER_HOME"
