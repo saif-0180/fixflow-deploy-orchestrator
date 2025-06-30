@@ -6,7 +6,7 @@ import queue
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, Callable, Any, Optional
 import uuid
-from backend.thread_monitor import thread_monitor, monitor_thread_creation
+from backend.thread_monitor import thread_monitor, monitor_thread_creation, log_app_startup
 
 logger = logging.getLogger('fix_deployment_orchestrator')
 

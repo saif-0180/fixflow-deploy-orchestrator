@@ -8,7 +8,7 @@ import os
 import sys
 import logging
 import argparse
-from backend.thread_monitor import log_app_startup, thread_monitor
+from backend.thread_manager import  thread_manager
 
 # Set up logging before importing anything else
 logging.basicConfig(
