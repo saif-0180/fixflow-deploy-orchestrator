@@ -1,11 +1,12 @@
+
 from flask import current_app, Blueprint, jsonify, request
 import json
 import os
 import subprocess
 import time
 import uuid
-import threading
 import logging
+from backend.thread_manager import thread_manager
 
 # Get logger
 logger = logging.getLogger('fix_deployment_orchestrator')
@@ -91,20 +92,28 @@ def deploy_sql():
     # Save deployment history
     save_deployment_history()
     
-    # Start deployment in a separate thread
-    threading.Thread(target=process_sql_deployment, args=(deployment_id, password)).start()
+    # Use thread manager to start deployment
+    thread_manager.submit_deployment_task(
+        process_sql_deployment, 
+        deployment_id,
+        password
+    )
     
     logger.info(f"SQL deployment initiated with ID: {deployment_id}")
     return jsonify({"deploymentId": deployment_id})
 
 def process_sql_deployment(deployment_id, password):
+    """
+    Process SQL deployment in a managed thread
+    This function is now called by the thread manager
+    """
     # Import here to ensure we get the shared instances
     from app import log_message, deployments, save_deployment_history
     
     try:
         # Check if deployment exists
         if deployment_id not in deployments:
-            logger.error(f"Deployment ID {deployment_id} not found in deployments dictionary")
+            thread_manager.log_thread_safe(f"Deployment ID {deployment_id} not found in deployments dictionary", "error")
             return
         
         deployment = deployments[deployment_id]
@@ -117,12 +126,12 @@ def process_sql_deployment(deployment_id, password):
         user = deployment["user"]
         
         source_file = os.path.join('/app/fixfiles', 'AllFts', ft, file_name)
-        logger.info(f"Processing SQL deployment from {source_file}")
+        thread_manager.log_thread_safe(f"Processing SQL deployment from {source_file}")
         
         if not os.path.exists(source_file):
             error_msg = f"Source file not found: {source_file}"
             log_message(deployment_id, f"ERROR: {error_msg}")
-            logger.error(error_msg)
+            thread_manager.log_thread_safe(error_msg, "error")
             
             # Update deployment status to failed
             if deployment_id in deployments:
@@ -138,7 +147,7 @@ def process_sql_deployment(deployment_id, password):
             error_msg = "psql command not found. PostgreSQL client tools are not installed."
             log_message(deployment_id, f"ERROR: {error_msg}")
             log_message(deployment_id, "SUGGESTION: Install postgresql-client package in the container")
-            logger.error(error_msg)
+            thread_manager.log_thread_safe(error_msg, "error")
             
             # Update deployment status to failed
             if deployment_id in deployments:
@@ -184,45 +193,45 @@ def process_sql_deployment(deployment_id, password):
                         if "ERROR:" in line_stripped.upper():
                             has_errors = True
                             log_message(deployment_id, line_stripped)
-                            logger.debug(f"[{deployment_id}] {line_stripped}")
+                            thread_manager.log_thread_safe(f"[{deployment_id}] {line_stripped}", "error")
                         elif "WARNING:" in line_stripped.upper():
                             has_warnings = True
                             log_message(deployment_id, line_stripped)
-                            logger.debug(f"[{deployment_id}] {line_stripped}")
+                            thread_manager.log_thread_safe(f"[{deployment_id}] {line_stripped}", "warning")
                         else:
                             log_message(deployment_id, line_stripped)
-                            logger.debug(f"[{deployment_id}] {line_stripped}")
+                            thread_manager.log_thread_safe(f"[{deployment_id}] {line_stripped}")
             
             # Determine final status based on errors found in output, not just return code
             if has_errors or result.returncode != 0:
                 log_message(deployment_id, "FAILED: SQL execution completed with errors")
                 if deployment_id in deployments:
                     deployments[deployment_id]["status"] = "failed"
-                logger.error(f"SQL deployment {deployment_id} failed - errors detected in output or non-zero return code")
+                thread_manager.log_thread_safe(f"SQL deployment {deployment_id} failed - errors detected in output or non-zero return code", "error")
             elif has_warnings:
                 log_message(deployment_id, "WARNING: SQL execution completed with warnings")
                 if deployment_id in deployments:
                     deployments[deployment_id]["status"] = "success"  # Still success but with warnings
-                logger.warning(f"SQL deployment {deployment_id} completed with warnings")
+                thread_manager.log_thread_safe(f"SQL deployment {deployment_id} completed with warnings", "warning")
             else:
                 log_message(deployment_id, "SUCCESS: SQL execution completed successfully")
                 if deployment_id in deployments:
                     deployments[deployment_id]["status"] = "success"
-                logger.info(f"SQL deployment {deployment_id} completed successfully")
+                thread_manager.log_thread_safe(f"SQL deployment {deployment_id} completed successfully")
             
         except subprocess.TimeoutExpired:
             error_msg = "SQL execution timed out after 5 minutes"
             log_message(deployment_id, f"ERROR: {error_msg}")
             if deployment_id in deployments:
                 deployments[deployment_id]["status"] = "failed"
-            logger.error(f"SQL deployment {deployment_id} timed out")
+            thread_manager.log_thread_safe(f"SQL deployment {deployment_id} timed out", "error")
             
         except subprocess.SubprocessError as e:
             error_msg = f"Subprocess error during SQL execution: {str(e)}"
             log_message(deployment_id, f"ERROR: {error_msg}")
             if deployment_id in deployments:
                 deployments[deployment_id]["status"] = "failed"
-            logger.error(error_msg)
+            thread_manager.log_thread_safe(error_msg, "error")
         
         # Always save deployment history after processing
         save_deployment_history()
@@ -233,7 +242,7 @@ def process_sql_deployment(deployment_id, password):
         log_message(deployment_id, f"ERROR: {error_msg}")
         log_message(deployment_id, "SOLUTION: Install PostgreSQL client tools in the container")
         log_message(deployment_id, "Command: apt-get update && apt-get install -y postgresql-client")
-        logger.error(f"FileNotFoundError in SQL deployment {deployment_id}: {str(e)}")
+        thread_manager.log_thread_safe(f"FileNotFoundError in SQL deployment {deployment_id}: {str(e)}", "error")
         
         if deployment_id in deployments:
             deployments[deployment_id]["status"] = "failed"
@@ -242,8 +251,7 @@ def process_sql_deployment(deployment_id, password):
     except KeyError as e:
         error_msg = f"KeyError in SQL deployment thread: missing key {str(e)}"
         log_message(deployment_id, f"ERROR: {error_msg}")
-        logger.error(f"KeyError in SQL deployment thread for {deployment_id}: {str(e)}")
-        logger.error(f"Available deployment keys: {list(deployment.keys()) if 'deployment' in locals() else 'deployment not available'}")
+        thread_manager.log_thread_safe(f"KeyError in SQL deployment thread for {deployment_id}: {str(e)}", "error")
         
         if deployment_id in deployments:
             deployments[deployment_id]["status"] = "failed"
@@ -253,68 +261,8 @@ def process_sql_deployment(deployment_id, password):
         # Catch-all for any other exceptions
         error_msg = f"Unexpected error during SQL deployment: {str(e)}"
         log_message(deployment_id, f"ERROR: {error_msg}")
-        logger.exception(f"Exception in SQL deployment {deployment_id}: {str(e)}")
+        thread_manager.log_thread_safe(f"Exception in SQL deployment {deployment_id}: {str(e)}", "error")
         
         if deployment_id in deployments:
             deployments[deployment_id]["status"] = "failed"
             save_deployment_history()
-
-
-# Add routes to get deployment logs (matching frontend expectations)
-#@db_routes.route('/api/deployment/<deployment_id>/logs', methods=['GET'])
-# @db_routes.route('/api/deploy/<deployment_id>/logs', methods=['GET'])  # Alternative endpoint for frontend compatibility
-# def get_deployment_logs(deployment_id):
-#     try:
-#         # Access deployments through current_app
-#         deployments = current_app.config.get('deployments', {})
-
-
-#         logger.info(f"Looking for deployment: {deployment_id}")
-#         logger.info(f"Available deployments: {list(deployments.keys())}")
-#         logger.info(f"Total deployments in memory: {len(deployments)}")
-        
-#         if deployment_id not in deployments:
-#             logger.warning(f"Deployment {deployment_id} not found in deployments dictionary")
-#             return jsonify({"error": "Deployment not found"}), 404
-        
-#         deployment = deployments[deployment_id]
-#         logs = deployment.get('logs', [])
-        
-#         return jsonify({
-#             "deploymentId": deployment_id,
-#             "status": deployment.get('status', 'unknown'),
-#             "logs": logs,
-#             "timestamp": deployment.get('timestamp', 0),
-#             "type": deployment.get('type', 'unknown')
-#         })
-        
-#     except Exception as e:
-#         logger.error(f"Error fetching logs for deployment {deployment_id}: {str(e)}")
-#         return jsonify({"error": str(e)}), 500
-
-
-# # Add routes to get deployment logs (matching frontend expectations)
-# @db_routes.route('/api/deployment/<deployment_id>/logs', methods=['GET'])
-# @db_routes.route('/api/deploy/<deployment_id>/logs', methods=['GET'])  # Alternative endpoint for frontend compatibility
-# def get_deployment_logs(deployment_id):
-#     try:
-#         from app import deployments
-        
-#         if deployment_id not in deployments:
-#             logger.warning(f"Deployment {deployment_id} not found in deployments dictionary")
-#             return jsonify({"error": "Deployment not found"}), 404
-        
-#         deployment = deployments[deployment_id]
-#         logs = deployment.get('logs', [])
-        
-#         return jsonify({
-#             "deploymentId": deployment_id,
-#             "status": deployment.get('status', 'unknown'),
-#             "logs": logs,
-#             "timestamp": deployment.get('timestamp', 0),
-#             "type": deployment.get('type', 'unknown')
-#         })
-        
-#     except Exception as e:
-#         logger.error(f"Error fetching logs for deployment {deployment_id}: {str(e)}")
-#         return jsonify({"error": str(e)}), 500
