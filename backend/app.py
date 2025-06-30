@@ -279,7 +279,7 @@ def check_ssh_setup():
             logger.info("SSH private key found and permissions set to 600")
             
             # Also check that the .ssh directory has proper permissions
-            os.chmod("/root/.ssh", 0o700)
+            os.chmod("/home/users/infadm/.ssh", 0o700)
             logger.info("SSH directory permissions set to 700")
 
             # Check control_path_dir permissions

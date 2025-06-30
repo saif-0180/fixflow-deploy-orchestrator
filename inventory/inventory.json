@@ -1,33 +1,8 @@
 
 {
   "vms": [
-    {"name": "batch1", "type": "batch", "ip": "34.228.64.95"},
-    {"name": "airflow", "type": "airflow", "ip": "34.205.69.219"},
-    {"name": "imdg2", "type": "imdg", "ip": "3.95.16.201"},
-    {"name": "dummy1", "type": "imdg", "ip": "3.95.16.201"},
-    {"name": "dummy2", "type": "imdg", "ip": "3.95.16.201"},
-    {"name": "dummy3", "type": "imdg", "ip": "3.95.16.201"},
-    {"name": "dummy4", "type": "imdg", "ip": "3.95.16.201"},
-    {"name": "dummy5", "type": "imdg", "ip": "3.95.16.201"},
-    {"name": "dummy6", "type": "imdg", "ip": "3.95.16.201"},
-    {"name": "dummy7", "type": "imdg", "ip": "3.95.16.201"},
-    {"name": "dummy8", "type": "imdg", "ip": "3.95.16.201"},
-    {"name": "dummy9", "type": "imdg", "ip": "3.95.16.201"},
-    {"name": "dummy10", "type": "imdg", "ip": "3.95.16.201"},
-    {"name": "dummy12", "type": "imdg", "ip": "3.95.16.201"},
-    {"name": "dummy13", "type": "imdg", "ip": "3.95.16.201"},
-    {"name": "dummy14", "type": "imdg", "ip": "3.95.16.201"},
-    {"name": "dummy15", "type": "imdg", "ip": "3.95.16.201"},
-    {"name": "dummy16", "type": "imdg", "ip": "3.95.16.201"},
-    {"name": "dummy17", "type": "imdg", "ip": "3.95.16.201"},
-    {"name": "dummy18", "type": "imdg", "ip": "3.95.16.201"},
-    {"name": "dummy19", "type": "imdg", "ip": "3.95.16.201"},
-    {"name": "dummy20", "type": "imdg", "ip": "3.95.16.201"},
-    {"name": "dummy21", "type": "imdg", "ip": "3.95.16.201"},
-    {"name": "dummy22", "type": "imdg", "ip": "3.95.16.201"},
-    {"name": "dummy23", "type": "imdg", "ip": "3.95.16.201"},
-    {"name": "dummy24", "type": "imdg", "ip": "3.95.16.201"},
-    {"name": "dummy25", "type": "imdg", "ip": "3.95.16.201"}
+    {"name": "batch1", "type": "batch", "ip": "54.165.148.121"},
+    {"name": "airflow", "type": "airflow", "ip": "18.233.158.216"}
   ],
   "users": ["infadm", "abpwrk1", "root"],
   "systemd_services": ["docker.service", "postgresql-15.service", "zookeeper"]
