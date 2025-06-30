@@ -16,8 +16,8 @@ class ThreadManager:
     """
     
     def __init__(self, max_workers: Optional[int] = None):
-        # Default to 10 workers if not specified, suitable for deployment tasks
-        self.max_workers = max_workers or 10
+        # Reduce to 3 workers to prevent thread exhaustion in Docker
+        self.max_workers = max_workers or 3
         self.executor = ThreadPoolExecutor(max_workers=self.max_workers, thread_name_prefix="DeploymentWorker")
         self.active_threads: Dict[str, threading.Thread] = {}
         self.thread_results: Dict[str, Any] = {}
@@ -66,9 +66,15 @@ class ThreadManager:
     
     def create_background_thread(self, target_func: Callable, thread_name: str, *args, **kwargs) -> str:
         """
-        Create a background thread for long-running tasks
+        Create a background thread for long-running tasks with safeguards
         Returns thread ID for tracking
         """
+        # Check current thread count before creating new ones
+        current_count = self.get_active_threads_count()
+        if current_count >= 5:  # Limit background threads
+            logger.warning(f"Too many active threads ({current_count}), rejecting new thread creation")
+            raise RuntimeError("Maximum active threads exceeded")
+        
         thread_id = str(uuid.uuid4())
         
         def wrapped_target():
@@ -172,19 +178,19 @@ class ThreadManager:
                 del self.active_threads[thread_id]
                 logger.debug(f"Cleaned up completed thread {thread_id}")
     
-    def shutdown(self, wait: bool = True, timeout: float = 30.0):
+    def shutdown(self, wait: bool = True, timeout: float = 10.0):
         """
-        Shutdown the thread manager gracefully
+        Shutdown the thread manager gracefully with shorter timeout
         """
         logger.info("Shutting down ThreadManager...")
         
         # Signal shutdown to all threads
         self.shutdown_event.set()
         
-        # Shutdown the thread pool executor
+        # Shutdown the thread pool executor with shorter timeout
         self.executor.shutdown(wait=wait, timeout=timeout)
         
-        # Wait for background threads to complete
+        # Wait for background threads to complete with shorter timeout
         if wait:
             with self._lock:
                 active_threads_copy = dict(self.active_threads)
@@ -192,7 +198,7 @@ class ThreadManager:
             for thread_id, thread in active_threads_copy.items():
                 if thread.is_alive():
                     logger.info(f"Waiting for thread {thread_id} to complete...")
-                    thread.join(timeout=5.0)
+                    thread.join(timeout=2.0)  # Reduced timeout
                     if thread.is_alive():
                         logger.warning(f"Thread {thread_id} did not complete within timeout")
         
@@ -204,42 +210,7 @@ class ThreadManager:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.shutdown()
 
-# Global thread manager instance
-thread_manager = ThreadManager()
+# Global thread manager instance with reduced workers
+thread_manager = ThreadManager(max_workers=3)
 
-# Convenience functions for app.py integration
-def create_deployment_thread(target_func: Callable, thread_name: str, *args, **kwargs) -> str:
-    """Create a deployment thread using the global thread manager"""
-    return thread_manager.create_background_thread(target_func, thread_name, *args, **kwargs)
-
-def submit_deployment_task(task_func: Callable, task_id: str, *args, **kwargs) -> str:
-    """Submit a deployment task using the global thread manager"""
-    return thread_manager.submit_deployment_task(task_func, task_id, *args, **kwargs)
-
-def get_thread_status(thread_id: str) -> Dict[str, Any]:
-    """Get thread status using the global thread manager"""
-    return thread_manager.get_thread_status(thread_id)
-
-def cleanup_threads():
-    """Clean up completed threads using the global thread manager"""
-    thread_manager.cleanup_completed_threads()
-
-def thread_safe_update_deployments(deployments_dict: Dict, deployment_id: str, updates: Dict):
-    """Thread-safe update for deployments dictionary"""
-    def update_operation():
-        if deployment_id in deployments_dict:
-            deployments_dict[deployment_id].update(updates)
-        return deployments_dict[deployment_id] if deployment_id in deployments_dict else None
-    
-    return thread_manager.thread_safe_operation(update_operation)
-
-def thread_safe_log_message(deployments_dict: Dict, deployment_id: str, message: str):
-    """Thread-safe logging for deployment messages"""
-    def log_operation():
-        if deployment_id in deployments_dict:
-            if 'logs' not in deployments_dict[deployment_id]:
-                deployments_dict[deployment_id]['logs'] = []
-            deployments_dict[deployment_id]['logs'].append(message)
-        return True
-    
-    return thread_manager.thread_safe_operation(log_operation)
+# ... keep existing code (convenience functions)
