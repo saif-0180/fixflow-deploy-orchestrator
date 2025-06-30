@@ -90,5 +90,5 @@ ENV DEPLOYMENT_LOGS_DIR=/app/logs
 # Start with entrypoint script
 ENTRYPOINT ["/entrypoint.sh"]
 
-# CMD to run the Flask server
-CMD ["python", "backend/app.py"]
+# CMD to run with the new startup script
+CMD ["python", "backend/start_server.py", "--server", "gunicorn"]

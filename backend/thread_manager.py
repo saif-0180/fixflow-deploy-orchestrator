@@ -6,19 +6,37 @@ import queue
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, Callable, Any, Optional
 import uuid
+from backend.thread_monitor import thread_monitor, monitor_thread_creation
 
 logger = logging.getLogger('fix_deployment_orchestrator')
 
 class ThreadManager:
     """
-    Centralized thread management for the application
-    Handles all threading operations including deployment processing
+    Centralized thread management for the application with comprehensive debugging
     """
     
     def __init__(self, max_workers: Optional[int] = None):
-        # Reduce to 3 workers to prevent thread exhaustion in Docker
-        self.max_workers = max_workers or 3
-        self.executor = ThreadPoolExecutor(max_workers=self.max_workers, thread_name_prefix="DeploymentWorker")
+        # Ultra-conservative threading for Docker
+        self.max_workers = max_workers or 2
+        
+        logger.info(f"THREAD_INIT: Initializing ThreadManager with {self.max_workers} workers")
+        thread_monitor.log_thread_creation("ThreadManager", "manager")
+        
+        # Check if we can create threads before initializing executor
+        if not monitor_thread_creation("Pre-ThreadPoolExecutor", "check"):
+            logger.error("THREAD_ERROR: Cannot create ThreadPoolExecutor - thread limit reached")
+            raise RuntimeError("Thread limit reached during initialization")
+        
+        try:
+            self.executor = ThreadPoolExecutor(
+                max_workers=self.max_workers, 
+                thread_name_prefix="DeployWorker"
+            )
+            logger.info(f"THREAD_SUCCESS: ThreadPoolExecutor created successfully")
+        except Exception as e:
+            logger.error(f"THREAD_ERROR: Failed to create ThreadPoolExecutor: {e}")
+            raise
+        
         self.active_threads: Dict[str, threading.Thread] = {}
         self.thread_results: Dict[str, Any] = {}
         self.shutdown_event = threading.Event()
@@ -29,188 +47,140 @@ class ThreadManager:
         # Thread-safe dictionaries for shared data
         self._lock = threading.RLock()
         
-        logger.info(f"ThreadManager initialized with {self.max_workers} workers")
+        logger.info(f"THREAD_INIT: ThreadManager initialized successfully")
+        thread_monitor.log_active_threads()
     
     def submit_deployment_task(self, task_func: Callable, task_id: str, *args, **kwargs) -> str:
-        """
-        Submit a deployment task to the thread pool
-        Returns the task ID for tracking
-        """
+        """Submit a deployment task with thread monitoring"""
+        logger.info(f"THREAD_SUBMIT: Attempting to submit task {task_id}")
+        
+        # Check thread limits before submission
+        if not monitor_thread_creation(f"Task-{task_id}", "deployment"):
+            logger.error(f"THREAD_ERROR: Cannot submit task {task_id} - thread limit reached")
+            raise RuntimeError(f"Thread limit reached, cannot submit task {task_id}")
+        
         try:
             future = self.executor.submit(self._wrapped_task, task_func, task_id, *args, **kwargs)
-            logger.info(f"Submitted deployment task {task_id} to thread pool")
+            logger.info(f"THREAD_SUCCESS: Submitted deployment task {task_id}")
             return task_id
         except Exception as e:
-            logger.error(f"Failed to submit task {task_id}: {str(e)}")
+            logger.error(f"THREAD_ERROR: Failed to submit task {task_id}: {str(e)}")
+            thread_monitor.log_active_threads()
             raise
     
     def _wrapped_task(self, task_func: Callable, task_id: str, *args, **kwargs):
-        """
-        Wrapper for tasks to handle logging and error tracking
-        """
+        """Wrapper for tasks with comprehensive logging"""
         thread_name = threading.current_thread().name
-        logger.info(f"Starting task {task_id} in thread {thread_name}")
+        logger.info(f"THREAD_TASK_START: Task {task_id} starting in thread {thread_name}")
         
         try:
             result = task_func(task_id, *args, **kwargs)
             with self._lock:
                 self.thread_results[task_id] = {"status": "success", "result": result}
-            logger.info(f"Task {task_id} completed successfully in thread {thread_name}")
+            logger.info(f"THREAD_TASK_SUCCESS: Task {task_id} completed in thread {thread_name}")
             return result
         except Exception as e:
             error_msg = f"Task {task_id} failed in thread {thread_name}: {str(e)}"
-            logger.error(error_msg)
+            logger.error(f"THREAD_TASK_ERROR: {error_msg}")
             with self._lock:
                 self.thread_results[task_id] = {"status": "error", "error": str(e)}
             raise
+        finally:
+            logger.info(f"THREAD_TASK_END: Task {task_id} finished in thread {thread_name}")
     
     def create_background_thread(self, target_func: Callable, thread_name: str, *args, **kwargs) -> str:
-        """
-        Create a background thread for long-running tasks with safeguards
-        Returns thread ID for tracking
-        """
-        # Check current thread count before creating new ones
-        current_count = self.get_active_threads_count()
-        if current_count >= 5:  # Limit background threads
-            logger.warning(f"Too many active threads ({current_count}), rejecting new thread creation")
-            raise RuntimeError("Maximum active threads exceeded")
+        """Create background thread with strict limits and monitoring"""
+        current_count = threading.active_count()
+        logger.info(f"THREAD_BG_REQUEST: Request to create background thread '{thread_name}' "
+                   f"(Current active: {current_count})")
+        
+        # Very strict limits for background threads
+        if current_count >= 8:  # Very low limit
+            logger.error(f"THREAD_BG_REJECT: Too many active threads ({current_count}), "
+                        f"rejecting background thread '{thread_name}'")
+            thread_monitor.log_active_threads()
+            raise RuntimeError(f"Maximum active threads exceeded ({current_count})")
+        
+        if not monitor_thread_creation(thread_name, "background"):
+            logger.error(f"THREAD_BG_REJECT: Thread monitor rejected creation of '{thread_name}'")
+            raise RuntimeError("Thread monitor rejected thread creation")
         
         thread_id = str(uuid.uuid4())
         
         def wrapped_target():
             try:
-                logger.info(f"Background thread {thread_name} started")
+                logger.info(f"THREAD_BG_START: Background thread {thread_name} started")
                 target_func(*args, **kwargs)
-                logger.info(f"Background thread {thread_name} completed")
+                logger.info(f"THREAD_BG_SUCCESS: Background thread {thread_name} completed")
             except Exception as e:
-                logger.error(f"Background thread {thread_name} failed: {str(e)}")
+                logger.error(f"THREAD_BG_ERROR: Background thread {thread_name} failed: {str(e)}")
             finally:
-                # Clean up thread reference
+                logger.info(f"THREAD_BG_CLEANUP: Cleaning up background thread {thread_name}")
                 with self._lock:
                     if thread_id in self.active_threads:
                         del self.active_threads[thread_id]
         
-        thread = threading.Thread(
-            target=wrapped_target,
-            name=thread_name,
-            daemon=True
-        )
-        
-        with self._lock:
-            self.active_threads[thread_id] = thread
-        thread.start()
-        logger.info(f"Created background thread {thread_name} with ID {thread_id}")
-        
-        return thread_id
-    
-    def get_thread_status(self, thread_id: str) -> Dict[str, Any]:
-        """
-        Get status of a specific thread
-        """
-        with self._lock:
-            if thread_id in self.active_threads:
-                thread = self.active_threads[thread_id]
-                return {
-                    "thread_id": thread_id,
-                    "name": thread.name,
-                    "alive": thread.is_alive(),
-                    "daemon": thread.daemon
-                }
-            elif thread_id in self.thread_results:
-                return {
-                    "thread_id": thread_id,
-                    "completed": True,
-                    **self.thread_results[thread_id]
-                }
-            else:
-                return {"thread_id": thread_id, "status": "not_found"}
-    
-    def get_active_threads_count(self) -> int:
-        """
-        Get count of currently active threads
-        """
-        with self._lock:
-            return len([t for t in self.active_threads.values() if t.is_alive()])
-    
-    def get_thread_pool_status(self) -> Dict[str, Any]:
-        """
-        Get status of the thread pool executor
-        """
-        return {
-            "max_workers": self.max_workers,
-            "active_threads": self.get_active_threads_count(),
-            "shutdown": self.executor._shutdown
-        }
-    
-    def log_thread_safe(self, message: str, level: str = "info"):
-        """
-        Thread-safe logging method
-        """
-        log_entry = {
-            "timestamp": time.time(),
-            "thread_name": threading.current_thread().name,
-            "level": level,
-            "message": message
-        }
-        self.log_queue.put(log_entry)
-        
-        # Also log immediately for debugging
-        getattr(logger, level, logger.info)(f"[{threading.current_thread().name}] {message}")
-    
-    def thread_safe_operation(self, operation_func: Callable, *args, **kwargs):
-        """
-        Execute an operation in a thread-safe manner
-        """
-        with self._lock:
-            return operation_func(*args, **kwargs)
-    
-    def cleanup_completed_threads(self):
-        """
-        Clean up references to completed threads
-        """
-        with self._lock:
-            completed_threads = []
-            for thread_id, thread in self.active_threads.items():
-                if not thread.is_alive():
-                    completed_threads.append(thread_id)
+        try:
+            thread = threading.Thread(
+                target=wrapped_target,
+                name=thread_name,
+                daemon=True
+            )
             
-            for thread_id in completed_threads:
-                del self.active_threads[thread_id]
-                logger.debug(f"Cleaned up completed thread {thread_id}")
+            with self._lock:
+                self.active_threads[thread_id] = thread
+            
+            thread.start()
+            logger.info(f"THREAD_BG_SUCCESS: Created background thread {thread_name} with ID {thread_id}")
+            thread_monitor.log_active_threads()
+            
+            return thread_id
+            
+        except Exception as e:
+            logger.error(f"THREAD_BG_CREATION_ERROR: Failed to create background thread {thread_name}: {e}")
+            thread_monitor.log_active_threads()
+            raise
     
-    def shutdown(self, wait: bool = True, timeout: float = 10.0):
-        """
-        Shutdown the thread manager gracefully with shorter timeout
-        """
-        logger.info("Shutting down ThreadManager...")
+    # ... keep existing code (other methods remain the same)
+    
+    def get_comprehensive_status(self) -> Dict[str, Any]:
+        """Get comprehensive threading status with debugging info"""
+        return {
+            "thread_pool": self.get_thread_pool_status(),
+            "monitor_report": thread_monitor.get_thread_report(),
+            "system_threads": threading.active_count(),
+            "main_thread": threading.main_thread().name,
+            "current_thread": threading.current_thread().name
+        }
+    
+    def shutdown(self, wait: bool = True, timeout: float = 5.0):
+        """Shutdown with comprehensive logging"""
+        logger.info("THREAD_SHUTDOWN: Starting ThreadManager shutdown...")
+        thread_monitor.log_active_threads()
         
         # Signal shutdown to all threads
         self.shutdown_event.set()
         
-        # Shutdown the thread pool executor with shorter timeout
-        self.executor.shutdown(wait=wait, timeout=timeout)
+        # Shutdown the thread pool executor with very short timeout
+        try:
+            self.executor.shutdown(wait=wait, timeout=timeout)
+            logger.info("THREAD_SHUTDOWN: ThreadPoolExecutor shutdown completed")
+        except Exception as e:
+            logger.error(f"THREAD_SHUTDOWN_ERROR: Error shutting down executor: {e}")
         
-        # Wait for background threads to complete with shorter timeout
+        # Wait for background threads with short timeout
         if wait:
             with self._lock:
                 active_threads_copy = dict(self.active_threads)
             
             for thread_id, thread in active_threads_copy.items():
                 if thread.is_alive():
-                    logger.info(f"Waiting for thread {thread_id} to complete...")
-                    thread.join(timeout=2.0)  # Reduced timeout
+                    logger.info(f"THREAD_SHUTDOWN: Waiting for thread {thread_id}...")
+                    thread.join(timeout=1.0)  # Very short timeout
                     if thread.is_alive():
-                        logger.warning(f"Thread {thread_id} did not complete within timeout")
+                        logger.warning(f"THREAD_SHUTDOWN: Thread {thread_id} did not complete")
         
-        logger.info("ThreadManager shutdown completed")
-    
-    def __enter__(self):
-        return self
-    
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.shutdown()
+        logger.info("THREAD_SHUTDOWN: ThreadManager shutdown completed")
+        thread_monitor.log_active_threads()
 
-# Global thread manager instance with reduced workers
-thread_manager = ThreadManager(max_workers=3)
-
-# ... keep existing code (convenience functions)
+# ... keep existing code (remaining functions and global instance)
