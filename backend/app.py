@@ -272,7 +272,7 @@ def log_message(deployment_id, message):
 def check_ssh_setup():
     try:
         # Check if SSH keys exist
-        ssh_key_path = "/root/.ssh/id_rsa"
+        ssh_key_path = "/home/users/infadm/.ssh/id_rsa"
         if os.path.exists(ssh_key_path):
             # Ensure correct permissions
             os.chmod(ssh_key_path, 0o600)
@@ -318,7 +318,7 @@ def test_ssh_connections():
                 
             logger.info(f"Testing SSH connection to {vm_name} ({vm_ip})")
             cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", 
-                  "-i", "/root/.ssh/id_rsa", f"infadm@{vm_ip}", "echo 'SSH Connection Test'"]
+                  "-i", "/home/users/infadm/.ssh/id_rsa", f"infadm@{vm_ip}", "echo 'SSH Connection Test'"]
                 
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
             if result.returncode == 0:
@@ -559,7 +559,7 @@ def process_file_deployment(deployment_id):
                 vm = next((v for v in inventory["vms"] if v["name"] == vm_name), None)
                 if vm:
                     # Add ansible_ssh_common_args to disable StrictHostKeyChecking for this connection
-                    f.write(f"{vm_name} ansible_host={vm['ip']} ansible_user=infadm ansible_ssh_private_key_file=/root/.ssh/id_rsa ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ControlMaster=auto -o ControlPath=/tmp/ansible-ssh/%h-%p-%r -o ControlPersist=60s'\n")
+                    f.write(f"{vm_name} ansible_host={vm['ip']} ansible_user=infadm ansible_ssh_private_key_file=/home/users/infadm/.ssh/id_rsa ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ControlMaster=auto -o ControlPath=/tmp/ansible-ssh/%h-%p-%r -o ControlPersist=60s'\n")
         
         logger.debug(f"Created Ansible inventory: {inventory_file}")
         log_message(deployment_id, f"Created inventory file with targets: {', '.join(vms)}")
@@ -570,7 +570,7 @@ def process_file_deployment(deployment_id):
             if vm:
                 log_message(deployment_id, f"Testing SSH connection to {vm_name} ({vm['ip']})")
                 cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", 
-                      "-i", "/root/.ssh/id_rsa", f"infadm@{vm['ip']}", "echo 'SSH Connection Test'"]
+                      "-i", "/home/users/infadm/.ssh/id_rsa", f"infadm@{vm['ip']}", "echo 'SSH Connection Test'"]
                 
                 try:
                     result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
@@ -708,11 +708,11 @@ def validate_deployment(deployment_id):
       when: file_check.stat.exists
 """)
                 # Write inventory file
-#                 tmp_inventory.write(f"""{vm_name} ansible_host={vm['ip']} ansible_user=infadm ansible_ssh_private_key_file=/root/.ssh/id_rsa ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ControlMaster=auto -o ControlPath=/tmp/ansible-ssh/%h-%p-%r -o ControlPersist=60s'
+#                 tmp_inventory.write(f"""{vm_name} ansible_host={vm['ip']} ansible_user=infadm ansible_ssh_private_key_file=/home/users/infadm/.ssh/id_rsa ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ControlMaster=auto -o ControlPath=/tmp/ansible-ssh/%h-%p-%r -o ControlPersist=60s'
 # """)      
             # validate_inventory = f"/tmp/validate_inventory_{deployment_id}_{vm_name}"
             # with open(validate_inventory, 'w') as f:
-            #     f.write(f"{vm_name} ansible_host={vm['ip']} ansible_user=infadm ansible_ssh_private_key_file=/root/.ssh/id_rsa ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ControlMaster=auto -o ControlPath=/tmp/ansible-ssh/%h-%p-%r -o ControlPersist=60s'")
+            #     f.write(f"{vm_name} ansible_host={vm['ip']} ansible_user=infadm ansible_ssh_private_key_file=/home/users/infadm/.ssh/id_rsa ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ControlMaster=auto -o ControlPath=/tmp/ansible-ssh/%h-%p-%r -o ControlPersist=60s'")
 
             # log_message(deployment_id, f"Running validation on {vm_name}")
             # cmd = ["ansible-playbook", "-i", validate_inventory, validate_playbook, "--limit", vm_name, "-v"]
@@ -739,7 +739,7 @@ def validate_deployment(deployment_id):
             # log_message(deployment_id, f"Validation on {vm_name}: {result_message}")
             validate_inventory = f"/tmp/validate_inventory_{deployment_id}_{vm_name}"
             with open(validate_inventory, 'w') as f:
-                f.write(f"{vm_name} ansible_host={vm['ip']} ansible_user=infadm ansible_ssh_private_key_file=/root/.ssh/id_rsa ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ControlMaster=auto -o ControlPath=/tmp/ansible-ssh/%h-%p-%r -o ControlPersist=60s'")
+                f.write(f"{vm_name} ansible_host={vm['ip']} ansible_user=infadm ansible_ssh_private_key_file=/home/users/infadm/.ssh/id_rsa ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ControlMaster=auto -o ControlPath=/tmp/ansible-ssh/%h-%p-%r -o ControlPersist=60s'")
 
             log_message(deployment_id, f"Running validation on {vm_name}")
             cmd = ["ansible-playbook", "-i", validate_inventory, validate_playbook, "--limit", vm_name, "-v"]
@@ -870,7 +870,7 @@ def validate_deployment(deployment_id):
 #        # # Generate inventory file
 #        # validate_inventory = f"/tmp/validate_inventory_{deployment_id}_{vm_name}"
 #        # with open(validate_inventory, 'w') as f:
-#        #     f.write(f"{vm_name} ansible_host={vm['ip']} ansible_user=infadm ansible_ssh_private_key_file=/root/.ssh/id_rsa ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ControlMaster=auto -o ControlPath=/tmp/ansible-ssh/%h-%p-%r -o ControlPersist=60s'")
+#        #     f.write(f"{vm_name} ansible_host={vm['ip']} ansible_user=infadm ansible_ssh_private_key_file=/home/users/infadm/.ssh/id_rsa ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ControlMaster=auto -o ControlPath=/tmp/ansible-ssh/%h-%p-%r -o ControlPersist=60s'")
        
 #        # log_message(deployment_id, f"Running validation on {vm_name}")
 #        # cmd = ["ansible-playbook", "-i", validate_inventory, validate_playbook, "--limit", vm_name, "-v"]
@@ -1047,7 +1047,7 @@ def process_shell_command(deployment_id):
                 # Find VM IP from inventory
                 vm = next((v for v in inventory["vms"] if v["name"] == vm_name), None)
                 if vm:
-                    f.write(f"{vm_name} ansible_host={vm['ip']} ansible_user=infadm ansible_ssh_private_key_file=/root/.ssh/id_rsa ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ControlMaster=auto -o ControlPath=/tmp/ansible-ssh/%h-%p-%r -o ControlPersist=60s'\n")
+                    f.write(f"{vm_name} ansible_host={vm['ip']} ansible_user=infadm ansible_ssh_private_key_file=/home/users/infadm/.ssh/id_rsa ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ControlMaster=auto -o ControlPath=/tmp/ansible-ssh/%h-%p-%r -o ControlPersist=60s'\n")
         
         logger.debug(f"Created Ansible inventory: {inventory_file}")
         
@@ -1835,7 +1835,7 @@ def process_rollback(rollback_id):
             # Generate inventory file
             inventory_file = f"/tmp/rollback_inventory_{rollback_id}_{vm_name}"
             with open(inventory_file, 'w') as f:
-                f.write(f"{vm_name} ansible_host={vm['ip']} ansible_user=infadm ansible_ssh_private_key_file=/root/.ssh/id_rsa ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ControlMaster=auto -o ControlPath=/tmp/ansible-ssh/%h-%p-%r -o ControlPersist=60s'")
+                f.write(f"{vm_name} ansible_host={vm['ip']} ansible_user=infadm ansible_ssh_private_key_file=/home/users/infadm/.ssh/id_rsa ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ControlMaster=auto -o ControlPath=/tmp/ansible-ssh/%h-%p-%r -o ControlPersist=60s'")
             
             # Run ansible playbook
             cmd = ["ansible-playbook", "-i", inventory_file, playbook_file, "-v"]
@@ -1952,7 +1952,7 @@ def process_rollback(rollback_id):
 #             # Generate inventory file
 #             inventory_file = f"/tmp/rollback_inventory_{rollback_id}_{vm_name}"
 #             with open(inventory_file, 'w') as f:
-#                 f.write(f"{vm_name} ansible_host={vm['ip']} ansible_user=infadm ansible_ssh_private_key_file=/root/.ssh/id_rsa ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ControlMaster=auto -o ControlPath=/tmp/ansible-ssh/%h-%p-%r -o ControlPersist=60s'")
+#                 f.write(f"{vm_name} ansible_host={vm['ip']} ansible_user=infadm ansible_ssh_private_key_file=/home/users/infadm/.ssh/id_rsa ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ControlMaster=auto -o ControlPath=/tmp/ansible-ssh/%h-%p-%r -o ControlPersist=60s'")
                 
 #             # Run ansible playbook
 #             cmd = ["ansible-playbook", "-i", inventory_file, playbook_file, "-v"]
@@ -2424,7 +2424,7 @@ def process_systemd_operation(deployment_id, operation, service, vms):
                 # Find VM IP from inventory
                 vm = next((v for v in inventory["vms"] if v["name"] == vm_name), None)
                 if vm:
-                    f.write(f"{vm_name} ansible_host={vm['ip']} ansible_user=infadm ansible_ssh_private_key_file=/root/.ssh/id_rsa ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ControlMaster=auto -o ControlPath=/tmp/ansible-ssh/%h-%p-%r -o ControlPersist=60s'\n")
+                    f.write(f"{vm_name} ansible_host={vm['ip']} ansible_user=infadm ansible_ssh_private_key_file=/home/users/infadm/.ssh/id_rsa ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ControlMaster=auto -o ControlPath=/tmp/ansible-ssh/%h-%p-%r -o ControlPersist=60s'\n")
         
         # Run ansible playbook
         env_vars = os.environ.copy()
@@ -2656,7 +2656,7 @@ def process_systemd_operation(deployment_id, operation, service, vms):
 #                 # Find VM IP from inventory
 #                 vm = next((v for v in inventory["vms"] if v["name"] == vm_name), None)
 #                 if vm:
-#                     f.write(f"{vm_name} ansible_host={vm['ip']} ansible_user=infadm ansible_ssh_private_key_file=/root/.ssh/id_rsa ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ControlMaster=auto -o ControlPath=/tmp/ansible-ssh/%h-%p-%r -o ControlPersist=60s'\n")
+#                     f.write(f"{vm_name} ansible_host={vm['ip']} ansible_user=infadm ansible_ssh_private_key_file=/home/users/infadm/.ssh/id_rsa ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ControlMaster=auto -o ControlPath=/tmp/ansible-ssh/%h-%p-%r -o ControlPersist=60s'\n")
         
 #         # Run ansible playbook
 #         env_vars = os.environ.copy()

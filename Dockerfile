@@ -1,4 +1,3 @@
-
 # Frontend Build Stage
 FROM node:18-alpine as frontend-build
 WORKDIR /app
@@ -13,18 +12,22 @@ WORKDIR /app/backend
 COPY backend/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Final Production Stage
+# Final Stage
 FROM python:3.11-slim
 WORKDIR /app
 
 # Create user and group with same IDs as host infadm user
-ARG USER_ID=1001
-ARG GROUP_ID=1003
+ARG USER_ID=1003
+ARG GROUP_ID=1002
 ARG USERNAME=infadm
+ARG GROUP_NAME=aimsys
 
 # Create group and user with specific IDs
-RUN groupadd -g $GROUP_ID $USERNAME && \
-    useradd -u $USER_ID -g $GROUP_ID -m -s /bin/bash $USERNAME
+#RUN groupadd -g $GROUP_ID $USERNAME && \
+#    useradd -u $USER_ID -g $GROUP_ID -m -s /bin/bash $USERNAME
+
+RUN groupadd -g $GROUP_ID $GROUP_NAME && \
+    useradd -u $USER_ID -g $GROUP_NAME -m -s /bin/bash $USERNAME
 
 # Copy frontend build from frontend stage
 COPY --from=frontend-build /app/dist /app/frontend/dist
@@ -33,7 +36,7 @@ COPY --from=frontend-build /app/dist /app/frontend/dist
 COPY --from=backend-build /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY backend /app/backend
 
-# Install system dependencies for production
+# Install ansible, SSH dependencies, and PostgreSQL client
 RUN apt-get update && \
     apt-get install -y \
         ansible \
@@ -42,27 +45,25 @@ RUN apt-get update && \
         procps \
         sudo \
         postgresql-client \
-        curl \
-        htop \
         && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
 # Create necessary directories with proper ownership
-RUN mkdir -p /home/$USERNAME/.ssh \
+RUN mkdir -p /home/users/$USERNAME/.ssh \
              /app/fixfiles/AllFts \
              /app/logs \
              /tmp/ansible-ssh \
              /app/ssh-keys && \
-    chmod 700 /home/$USERNAME/.ssh && \
+    chmod 700 /home/users/$USERNAME/.ssh && \
     chmod -R 777 /tmp/ansible-ssh && \
-    chown -R $USERNAME:$USERNAME /app && \
-    chown -R $USERNAME:$USERNAME /home/$USERNAME
+    chown -R $USERNAME:$GROUP_NAME /app && \
+    chown -R $USERNAME:$GROUP_NAME /home/users/$USERNAME
 
 # Copy entrypoint script and set permissions
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh && \
-    chown $USERNAME:$USERNAME /entrypoint.sh
+    chown $USERNAME:$GROUP_NAME /entrypoint.sh
 
 # Give sudo access to infadm user (if needed for ansible)
 RUN echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
@@ -71,13 +72,13 @@ RUN echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 USER $USERNAME
 
 # Set HOME environment variable
-ENV HOME=/home/$USERNAME
+ENV HOME=/home/users/$USERNAME
 
 # Expose ports
 EXPOSE 5000
 
-# Set production environment variables
-ENV FLASK_APP=backend/wsgi.py
+# Set environment variables
+ENV FLASK_APP=backend/app.py
 ENV FLASK_ENV=production
 ENV ANSIBLE_HOST_KEY_CHECKING=False
 ENV ANSIBLE_SSH_CONTROL_PATH=/tmp/ansible-ssh/%h-%p-%r
@@ -86,19 +87,8 @@ ENV PYTHONUNBUFFERED=1
 ENV LOG_FILE_PATH=/app/logs/application.log
 ENV DEPLOYMENT_LOGS_DIR=/app/logs
 
-# Gunicorn production settings
-ENV GUNICORN_WORKERS=4
-ENV GUNICORN_WORKER_CLASS=gevent
-ENV GUNICORN_WORKER_CONNECTIONS=1000
-ENV GUNICORN_MAX_REQUESTS=1000
-ENV GUNICORN_TIMEOUT=30
-ENV GUNICORN_KEEPALIVE=2
-ENV GUNICORN_ACCESS_LOG=/app/logs/gunicorn_access.log
-ENV GUNICORN_ERROR_LOG=/app/logs/gunicorn_error.log
-ENV GUNICORN_LOG_LEVEL=info
-
 # Start with entrypoint script
 ENTRYPOINT ["/entrypoint.sh"]
 
-# CMD to run Gunicorn in production
-CMD ["gunicorn", "--config", "backend/gunicorn.conf.py", "backend.wsgi:application"]
+# CMD to run the Flask server
+CMD ["python", "backend/app.py"]

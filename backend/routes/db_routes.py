@@ -1,14 +1,11 @@
-
 from flask import current_app, Blueprint, jsonify, request
 import json
 import os
 import subprocess
 import time
 import uuid
+import threading
 import logging
-
-# Import the new thread management system
-from backend.thread_manager import submit_deployment_task
 
 # Get logger
 logger = logging.getLogger('fix_deployment_orchestrator')
@@ -21,48 +18,36 @@ DEPLOYMENT_LOGS_DIR = os.environ.get('DEPLOYMENT_LOGS_DIR', '/app/logs')
 @db_routes.route('/api/db/connections', methods=['GET'])
 def get_db_connections():
     try:
-        logger.debug("Fetching DB connections from inventory")
         # First try to read from inventory file
         inventory_path = os.path.join('inventory', 'db_inventory.json')
         if os.path.exists(inventory_path):
             with open(inventory_path, 'r') as f:
                 inventory = json.load(f)
-                connections = inventory.get('db_connections', [])
-                logger.info(f"Found {len(connections)} DB connections in inventory")
-                return jsonify(connections)
+                return jsonify(inventory.get('db_connections', []))
         
         # Fallback to default values if inventory file not found
-        logger.warning("DB inventory file not found, using fallback data")
-        fallback_connections = [
+        return jsonify([
             {"hostname": "10.172.145.204", "port": "5400", "users": ["xpidbo1cfg", "abpwrk1db", "postgres"]},
             {"hostname": "10.172.145.205", "port": "5432", "users": ["postgres", "dbadmin"]}
-        ]
-        return jsonify(fallback_connections)
+        ])
     except Exception as e:
         logger.error(f"Error fetching DB connections: {str(e)}")
-        logger.exception("DB connections fetch error details:")
         return jsonify({"error": str(e)}), 500
 
 @db_routes.route('/api/db/users', methods=['GET'])
 def get_db_users():
     try:
-        logger.debug("Fetching DB users from inventory")
         # First try to read from inventory file
         inventory_path = os.path.join('inventory', 'db_inventory.json')
         if os.path.exists(inventory_path):
             with open(inventory_path, 'r') as f:
                 inventory = json.load(f)
-                users = inventory.get('db_users', ["xpidbo1cfg", "postgres", "dbadmin"])
-                logger.info(f"Found {len(users)} DB users in inventory")
-                return jsonify(users)
+                return jsonify(inventory.get('db_users', ["xpidbo1cfg", "postgres", "dbadmin"]))
         
         # Fallback to default values if inventory file not found
-        logger.warning("DB inventory file not found, using fallback users")
-        fallback_users = ["xpidbo1cfg", "postgres", "dbadmin"]
-        return jsonify(fallback_users)
+        return jsonify(["xpidbo1cfg", "postgres", "dbadmin"])
     except Exception as e:
         logger.error(f"Error fetching DB users: {str(e)}")
-        logger.exception("DB users fetch error details:")
         return jsonify({"error": str(e)}), 500
 
 @db_routes.route('/api/deploy/sql', methods=['POST'])
@@ -70,77 +55,51 @@ def deploy_sql():
     # Import here to avoid circular imports and ensure we get the shared instance
     from app import deployments, save_deployment_history
     
-    try:
-        data = request.json
-        ft = data.get('ft')
-        file_name = data.get('file')
-        hostname = data.get('hostname')
-        port = data.get('port')
-        db_name = data.get('dbName')
-        user = data.get('user')
-        password = data.get('password', '')
-        
-        logger.info(f"SQL deployment request received: {file_name} from FT {ft} on {hostname}:{port}")
-        logger.debug(f"Request data: ft={ft}, file={file_name}, host={hostname}, port={port}, db={db_name}, user={user}")
-        
-        if not all([ft, file_name, hostname, port, db_name, user]):
-            logger.error("Missing required parameters for SQL deployment")
-            logger.debug(f"Missing params check: ft={bool(ft)}, file={bool(file_name)}, hostname={bool(hostname)}, port={bool(port)}, db_name={bool(db_name)}, user={bool(user)}")
-            return jsonify({"error": "Missing required parameters"}), 400
-        
-        # Generate a unique deployment ID
-        deployment_id = str(uuid.uuid4())
-        logger.info(f"Generated deployment ID: {deployment_id}")
-        
-        # Store deployment information in the shared deployments dictionary
-        deployments[deployment_id] = {
-            "id": deployment_id,
-            "type": "sql",
-            "ft": ft,
-            "file": file_name,
-            "hostname": hostname,
-            "port": port,
-            "db_name": db_name,
-            "user": user,
-            "status": "running",
-            "timestamp": time.time(),
-            "logs": []
-        }
-        
-        logger.debug(f"Stored deployment info for {deployment_id}")
-        
-        # Save deployment history
-        save_deployment_history()
-        
-        # Start deployment using the new thread management system
-        try:
-            submit_deployment_task(process_sql_deployment, deployment_id, password)
-            logger.info(f"SQL deployment task submitted successfully with ID: {deployment_id}")
-        except Exception as thread_error:
-            logger.error(f"Failed to submit SQL deployment task: {str(thread_error)}")
-            logger.exception("Thread submission error details:")
-            
-            # Update deployment status to failed if thread submission fails
-            if deployment_id in deployments:
-                deployments[deployment_id]["status"] = "failed"
-                deployments[deployment_id]["logs"].append(f"ERROR: Failed to start deployment thread: {str(thread_error)}")
-                save_deployment_history()
-            
-            return jsonify({"error": f"Failed to start deployment: {str(thread_error)}"}), 500
-        
-        return jsonify({"deploymentId": deployment_id})
-        
-    except Exception as e:
-        logger.error(f"Error in SQL deployment endpoint: {str(e)}")
-        logger.exception("SQL deployment endpoint error details:")
-        return jsonify({"error": str(e)}), 500
+    data = request.json
+    ft = data.get('ft')
+    file_name = data.get('file')
+    hostname = data.get('hostname')
+    port = data.get('port')
+    db_name = data.get('dbName')
+    user = data.get('user')
+    password = data.get('password', '')
+    
+    logger.info(f"SQL deployment request received: {file_name} from FT {ft} on {hostname}:{port}")
+    
+    if not all([ft, file_name, hostname, port, db_name, user]):
+        logger.error("Missing required parameters for SQL deployment")
+        return jsonify({"error": "Missing required parameters"}), 400
+    
+    # Generate a unique deployment ID
+    deployment_id = str(uuid.uuid4())
+    
+    # Store deployment information in the shared deployments dictionary
+    deployments[deployment_id] = {
+        "id": deployment_id,
+        "type": "sql",
+        "ft": ft,
+        "file": file_name,
+        "hostname": hostname,
+        "port": port,
+        "db_name": db_name,
+        "user": user,
+        "status": "running",
+        "timestamp": time.time(),
+        "logs": []
+    }
+    
+    # Save deployment history
+    save_deployment_history()
+    
+    # Start deployment in a separate thread
+    threading.Thread(target=process_sql_deployment, args=(deployment_id, password)).start()
+    
+    logger.info(f"SQL deployment initiated with ID: {deployment_id}")
+    return jsonify({"deploymentId": deployment_id})
 
 def process_sql_deployment(deployment_id, password):
-    """Process SQL deployment in a separate thread"""
     # Import here to ensure we get the shared instances
     from app import log_message, deployments, save_deployment_history
-    
-    logger.info(f"Starting SQL deployment processing for {deployment_id} in thread {threading.current_thread().name}")
     
     try:
         # Check if deployment exists
@@ -149,7 +108,6 @@ def process_sql_deployment(deployment_id, password):
             return
         
         deployment = deployments[deployment_id]
-        logger.debug(f"Processing deployment: {deployment}")
         
         ft = deployment["ft"]
         file_name = deployment["file"]
@@ -197,7 +155,6 @@ def process_sql_deployment(deployment_id, password):
             env["PGPASSWORD"] = password
         
         log_message(deployment_id, f"Executing: psql -h {hostname} -p {port} -d {db_name} -U {user} -f {file_name}")
-        logger.debug(f"Executing SQL command for deployment {deployment_id}")
         
         try:
             # Use subprocess.run for better control and to capture both stdout and stderr
@@ -301,6 +258,63 @@ def process_sql_deployment(deployment_id, password):
         if deployment_id in deployments:
             deployments[deployment_id]["status"] = "failed"
             save_deployment_history()
-    
-    finally:
-        logger.info(f"SQL deployment processing completed for {deployment_id}")
+
+
+# Add routes to get deployment logs (matching frontend expectations)
+#@db_routes.route('/api/deployment/<deployment_id>/logs', methods=['GET'])
+# @db_routes.route('/api/deploy/<deployment_id>/logs', methods=['GET'])  # Alternative endpoint for frontend compatibility
+# def get_deployment_logs(deployment_id):
+#     try:
+#         # Access deployments through current_app
+#         deployments = current_app.config.get('deployments', {})
+
+
+#         logger.info(f"Looking for deployment: {deployment_id}")
+#         logger.info(f"Available deployments: {list(deployments.keys())}")
+#         logger.info(f"Total deployments in memory: {len(deployments)}")
+        
+#         if deployment_id not in deployments:
+#             logger.warning(f"Deployment {deployment_id} not found in deployments dictionary")
+#             return jsonify({"error": "Deployment not found"}), 404
+        
+#         deployment = deployments[deployment_id]
+#         logs = deployment.get('logs', [])
+        
+#         return jsonify({
+#             "deploymentId": deployment_id,
+#             "status": deployment.get('status', 'unknown'),
+#             "logs": logs,
+#             "timestamp": deployment.get('timestamp', 0),
+#             "type": deployment.get('type', 'unknown')
+#         })
+        
+#     except Exception as e:
+#         logger.error(f"Error fetching logs for deployment {deployment_id}: {str(e)}")
+#         return jsonify({"error": str(e)}), 500
+
+
+# # Add routes to get deployment logs (matching frontend expectations)
+# @db_routes.route('/api/deployment/<deployment_id>/logs', methods=['GET'])
+# @db_routes.route('/api/deploy/<deployment_id>/logs', methods=['GET'])  # Alternative endpoint for frontend compatibility
+# def get_deployment_logs(deployment_id):
+#     try:
+#         from app import deployments
+        
+#         if deployment_id not in deployments:
+#             logger.warning(f"Deployment {deployment_id} not found in deployments dictionary")
+#             return jsonify({"error": "Deployment not found"}), 404
+        
+#         deployment = deployments[deployment_id]
+#         logs = deployment.get('logs', [])
+        
+#         return jsonify({
+#             "deploymentId": deployment_id,
+#             "status": deployment.get('status', 'unknown'),
+#             "logs": logs,
+#             "timestamp": deployment.get('timestamp', 0),
+#             "type": deployment.get('type', 'unknown')
+#         })
+        
+#     except Exception as e:
+#         logger.error(f"Error fetching logs for deployment {deployment_id}: {str(e)}")
+#         return jsonify({"error": str(e)}), 500
