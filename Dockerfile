@@ -1,3 +1,4 @@
+
 # Frontend Build Stage
 FROM node:18-alpine as frontend-build
 WORKDIR /app
@@ -12,7 +13,7 @@ WORKDIR /app/backend
 COPY backend/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Final Stage
+# Final Production Stage
 FROM python:3.11-slim
 WORKDIR /app
 
@@ -32,7 +33,7 @@ COPY --from=frontend-build /app/dist /app/frontend/dist
 COPY --from=backend-build /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY backend /app/backend
 
-# Install ansible, SSH dependencies, and PostgreSQL client
+# Install system dependencies for production
 RUN apt-get update && \
     apt-get install -y \
         ansible \
@@ -41,6 +42,8 @@ RUN apt-get update && \
         procps \
         sudo \
         postgresql-client \
+        curl \
+        htop \
         && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
@@ -73,8 +76,8 @@ ENV HOME=/home/$USERNAME
 # Expose ports
 EXPOSE 5000
 
-# Set environment variables
-ENV FLASK_APP=backend/app.py
+# Set production environment variables
+ENV FLASK_APP=backend/wsgi.py
 ENV FLASK_ENV=production
 ENV ANSIBLE_HOST_KEY_CHECKING=False
 ENV ANSIBLE_SSH_CONTROL_PATH=/tmp/ansible-ssh/%h-%p-%r
@@ -83,8 +86,19 @@ ENV PYTHONUNBUFFERED=1
 ENV LOG_FILE_PATH=/app/logs/application.log
 ENV DEPLOYMENT_LOGS_DIR=/app/logs
 
+# Gunicorn production settings
+ENV GUNICORN_WORKERS=4
+ENV GUNICORN_WORKER_CLASS=gevent
+ENV GUNICORN_WORKER_CONNECTIONS=1000
+ENV GUNICORN_MAX_REQUESTS=1000
+ENV GUNICORN_TIMEOUT=30
+ENV GUNICORN_KEEPALIVE=2
+ENV GUNICORN_ACCESS_LOG=/app/logs/gunicorn_access.log
+ENV GUNICORN_ERROR_LOG=/app/logs/gunicorn_error.log
+ENV GUNICORN_LOG_LEVEL=info
+
 # Start with entrypoint script
 ENTRYPOINT ["/entrypoint.sh"]
 
-# CMD to run the Flask server
-CMD ["python", "backend/app.py"]
+# CMD to run Gunicorn in production
+CMD ["gunicorn", "--config", "backend/gunicorn.conf.py", "backend.wsgi:application"]
