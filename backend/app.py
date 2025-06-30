@@ -2726,10 +2726,4 @@ if __name__ == '__main__':
     logger.info("Checking SSH key setup...")
     check_ssh_setup()
     
-    #serve(app, host="0.0.0.0", port=5000)
-    serve(app, 
-      host="0.0.0.0", 
-      port=5000,
-      threads=2,  # Reduce from default (6)
-      connection_limit=100,  # Limit concurrent connections
-      cleanup_interval=30)  # Clean up connections more frequently
+    serve(app, host="0.0.0.0", port=5000)
