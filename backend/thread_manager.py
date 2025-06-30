@@ -6,7 +6,7 @@ import queue
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, Callable, Any, Optional
 import uuid
-from backend.thread_monitor import thread_monitor, monitor_thread_creation, log_app_startup
+from backend.thread_monitor import thread_monitor, monitor_thread_creation
 
 logger = logging.getLogger('fix_deployment_orchestrator')
 
@@ -141,7 +141,43 @@ class ThreadManager:
             thread_monitor.log_active_threads()
             raise
     
-    # ... keep existing code (other methods remain the same)
+    def get_thread_pool_status(self) -> Dict[str, Any]:
+        """Get thread pool executor status"""
+        try:
+            return {
+                "max_workers": self.max_workers,
+                "active_tasks": len(self.thread_results),
+                "shutdown_requested": self.shutdown_event.is_set()
+            }
+        except Exception as e:
+            logger.error(f"Error getting thread pool status: {e}")
+            return {"error": str(e)}
+    
+    def get_active_threads_count(self) -> int:
+        """Get count of active threads"""
+        with self._lock:
+            return len(self.active_threads)
+    
+    def cleanup_completed_threads(self):
+        """Clean up completed threads"""
+        with self._lock:
+            completed_threads = []
+            for thread_id, thread in self.active_threads.items():
+                if not thread.is_alive():
+                    completed_threads.append(thread_id)
+            
+            for thread_id in completed_threads:
+                del self.active_threads[thread_id]
+                logger.info(f"THREAD_CLEANUP: Removed completed thread {thread_id}")
+    
+    def thread_safe_operation(self, operation: Callable) -> Any:
+        """Execute operation in thread-safe manner"""
+        with self._lock:
+            try:
+                return operation()
+            except Exception as e:
+                logger.error(f"THREAD_SAFE_OP_ERROR: {str(e)}")
+                raise
     
     def get_comprehensive_status(self) -> Dict[str, Any]:
         """Get comprehensive threading status with debugging info"""
@@ -183,4 +219,32 @@ class ThreadManager:
         logger.info("THREAD_SHUTDOWN: ThreadManager shutdown completed")
         thread_monitor.log_active_threads()
 
-# ... keep existing code (remaining functions and global instance)
+# Global thread manager instance
+thread_manager = ThreadManager(max_workers=2)
+
+def thread_safe_update_deployments(deployments: Dict, deployment_id: str, updates: Dict) -> Dict:
+    """Thread-safe deployment update"""
+    def update_operation():
+        if deployment_id in deployments:
+            deployments[deployment_id].update(updates)
+            logger.info(f"THREAD_SAFE: Updated deployment {deployment_id}")
+        return deployments
+    
+    return thread_manager.thread_safe_operation(update_operation)
+
+def thread_safe_log_message(deployments: Dict, deployment_id: str, message: str) -> bool:
+    """Thread-safe deployment log message"""
+    def log_operation():
+        if deployment_id in deployments:
+            if 'logs' not in deployments[deployment_id]:
+                deployments[deployment_id]['logs'] = []
+            deployments[deployment_id]['logs'].append(message)
+            logger.info(f"THREAD_SAFE: Added log to deployment {deployment_id}")
+            return True
+        return False
+    
+    return thread_manager.thread_safe_operation(log_operation)
+
+def get_thread_manager_status():
+    """Get comprehensive thread manager status"""
+    return thread_manager.get_comprehensive_status()
