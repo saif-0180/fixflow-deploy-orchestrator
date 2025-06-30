@@ -1,8 +1,9 @@
+
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { LogDisplay } from './LogDisplay';
+import LogDisplay from './LogDisplay';
 import { Clock, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 
 interface Deployment {
@@ -17,14 +18,14 @@ interface Deployment {
   logs: string[];
 }
 
-type StatusVariant = "default" | "secondary" | "success" | "destructive";
+type StatusVariant = "default" | "secondary" | "destructive" | "outline";
 
 const getStatusVariant = (status: string): StatusVariant => {
   switch (status) {
     case 'running':
       return "secondary";
     case 'success':
-      return "success";
+      return "default";
     case 'failed':
       return "destructive";
     default:
@@ -132,3 +133,5 @@ export const DeploymentHistory = () => {
     </div>
   );
 };
+
+export default DeploymentHistory;
