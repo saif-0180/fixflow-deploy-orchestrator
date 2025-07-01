@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
@@ -7,7 +8,7 @@ import { Label } from './ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import LogDisplay from './LogDisplay';
 import VMSelector from './VMSelector';
-import { Settings, Play, Square, RotateCcw, Info } from 'lucide-react';
+import { Settings, Play, Square, RotateCcw, Info, Loader2 } from 'lucide-react';
 import { toast } from './ui/use-toast';
 
 interface SystemctlOperationVariables {
@@ -41,14 +42,15 @@ const SystemctlOperations = () => {
 
   const queryClient = useQueryClient();
 
-  const { mutate, isLoading, isError, error, data, reset } = useMutation(performSystemctlOperation, {
+  const { mutate, isPending, isError, error, data, reset } = useMutation({
+    mutationFn: performSystemctlOperation,
     onSuccess: (data) => {
       setLogs(data.logs || []);
       toast({
         title: "Systemctl Operation Successful",
         description: `Successfully performed ${operation} on ${serviceName} on ${vmName}.`,
       });
-      queryClient.invalidateQueries(['deployments']);
+      queryClient.invalidateQueries({ queryKey: ['deployments'] });
     },
     onError: (err: any) => {
       setLogs(err.logs || []);
@@ -84,7 +86,7 @@ const SystemctlOperations = () => {
           </CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4">
-          <VMSelector onChange={setVmName} value={vmName} />
+          <VMSelector value={vmName} onValueChange={setVmName} />
 
           <div className="grid gap-2">
             <Label htmlFor="service">Service Name</Label>
@@ -116,8 +118,8 @@ const SystemctlOperations = () => {
               <RotateCcw className="h-4 w-4 mr-2" />
               Reset
             </Button>
-            <Button type="submit" onClick={handleSubmit} disabled={isLoading}>
-              {isLoading ? (
+            <Button type="submit" onClick={handleSubmit} disabled={isPending}>
+              {isPending ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Processing
