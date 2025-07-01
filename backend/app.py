@@ -451,8 +451,9 @@ def deploy_file():
     save_deployment_history()
     
     # Start deployment in a separate thread
-    threading.Thread(target=process_file_deployment, args=(deployment_id,)).start()
-    
+    #threading.Thread(target=process_file_deployment, args=(deployment_id,)).start()
+    safe_start_file_deployment(process_file_deployment, deployment_id)
+
     logger.info(f"File deployment initiated with ID: {deployment_id}")
     return jsonify({"deploymentId": deployment_id})
 
@@ -963,7 +964,8 @@ def run_shell_command():
     save_deployment_history()
     
     # Start command execution in a separate thread
-    threading.Thread(target=process_shell_command, args=(deployment_id,)).start()
+    #threading.Thread(target=process_shell_command, args=(deployment_id,)).start()
+    safe_start_file_deployment(process_shell_command, deployment_id)
     
     logger.info(f"Shell command initiated with ID: {deployment_id}")
     return jsonify({"deploymentId": deployment_id, "commandId": deployment_id})
@@ -1749,8 +1751,9 @@ def rollback_deployment(deployment_id):
     save_deployment_history()
     
     # Start rollback in a separate thread
-    threading.Thread(target=process_rollback, args=(rollback_id,)).start()
-    
+    #threading.Thread(target=process_rollback, args=(rollback_id,)).start()
+    safe_start_file_deployment(process_rollback, rollback_id)
+
     logger.info(f"Rollback initiated with ID: {rollback_id}")
     return jsonify({"deploymentId": rollback_id})
 
@@ -2226,8 +2229,9 @@ def systemd_operation(operation):
     save_deployment_history()
     
     # Start systemd operation in a separate thread
-    threading.Thread(target=process_systemd_operation, args=(deployment_id, operation, service, vms)).start()
-    
+    #threading.Thread(target=process_systemd_operation, args=(deployment_id, operation, service, vms)).start()
+    safe_start_file_deployment(process_systemd_operation, deployment_id, operation, service, vms)
+
     logger.info(f"Systemd {operation} initiated with ID: {deployment_id}")
     return jsonify({"deploymentId": deployment_id})
 
