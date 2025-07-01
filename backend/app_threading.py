@@ -6,8 +6,8 @@ This module provides thread-safe operations for the main Flask application
 
 import threading
 import logging
-from typing import Dict, Any, List
-from backend.thread_manager import thread_manager, thread_safe_update_deployments, thread_safe_log_message
+from typing import Dict, Any, List, Callable
+from backend.thread_manager import thread_manager, thread_safe_update_deployments, thread_safe_log_message, safe_start_thread
 
 logger = logging.getLogger('fix_deployment_orchestrator')
 
@@ -41,6 +41,23 @@ class AppThreadingManager:
             return save_func(*args, **kwargs)
         
         return thread_manager.thread_safe_operation(save_operation)
+    
+    def safe_start_operation_thread(self, target_func: Callable, operation_name: str, *args, **kwargs) -> bool:
+        """
+        Safely start an operation thread - replaces direct threading.Thread().start()
+        This is the recommended way to start threads for Flask operations
+        """
+        thread_name = f"Operation-{operation_name}"
+        logger.info(f"APP_THREADING: Attempting to start operation thread: {thread_name}")
+        
+        success = safe_start_thread(target_func, thread_name, *args, **kwargs)
+        
+        if success:
+            logger.info(f"APP_THREADING: Successfully started operation thread: {thread_name}")
+        else:
+            logger.error(f"APP_THREADING: Failed to start operation thread: {thread_name}")
+            
+        return success
     
     def cleanup_ssh_threads(self):
         """
@@ -110,3 +127,10 @@ def perform_threading_cleanup():
 def cleanup_ssh_threads():
     """Clean up SSH threads after connection tests"""
     app_threading_manager.cleanup_ssh_threads()
+
+def start_operation_thread(target_func: Callable, operation_name: str, *args, **kwargs) -> bool:
+    """
+    Start an operation thread safely - this should replace all direct threading.Thread().start() calls
+    Returns True if thread was started successfully, False otherwise
+    """
+    return app_threading_manager.safe_start_operation_thread(target_func, operation_name, *args, **kwargs)

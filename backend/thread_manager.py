@@ -89,6 +89,93 @@ class ThreadManager:
         logger.info(f"THREAD_INIT: ThreadManager initialized successfully")
         thread_monitor.log_active_threads()
 
+    def safe_thread_start(self, target_func: Callable, thread_name: str, *args, **kwargs) -> bool:
+        """
+        Safely start a thread with comprehensive error handling and cleanup
+        This replaces direct threading.Thread().start() calls
+        """
+        current_count = threading.active_count()
+        logger.info(f"THREAD_SAFE_START: Request to start thread '{thread_name}' "
+                   f"(Current active: {current_count})")
+
+        # Very strict limits - prevent "can't start new thread" error
+        if current_count >= 3:  # Ultra low limit for pure sync mode
+            logger.error(f"THREAD_SAFE_START_REJECT: Too many active threads ({current_count}), "
+                        f"rejecting thread '{thread_name}'")
+            thread_monitor.log_active_threads()
+            return False
+
+        # Use safe thread monitoring
+        if not safe_monitor_thread_creation(thread_name, "safe_start"):
+            logger.error(f"THREAD_SAFE_START_REJECT: Thread monitor rejected creation of '{thread_name}'")
+            return False
+
+        # Force cleanup before creating new thread
+        self.cleanup_completed_threads()
+        gc.collect()
+
+        thread_id = str(uuid.uuid4())
+
+        def wrapped_target():
+            try:
+                logger.info(f"THREAD_SAFE_START: Thread {thread_name} started")
+                target_func(*args, **kwargs)
+                logger.info(f"THREAD_SAFE_START: Thread {thread_name} completed successfully")
+            except Exception as e:
+                logger.error(f"THREAD_SAFE_START_ERROR: Thread {thread_name} failed: {str(e)}")
+            finally:
+                logger.info(f"THREAD_SAFE_START_CLEANUP: Cleaning up thread {thread_name}")
+                with self._lock:
+                    if thread_id in self.active_threads:
+                        del self.active_threads[thread_id]
+                # Force cleanup after thread completion
+                self.cleanup_completed_threads()
+                gc.collect()
+
+        try:
+            thread = threading.Thread(
+                target=wrapped_target,
+                name=thread_name,
+                daemon=True
+            )
+
+            with self._lock:
+                self.active_threads[thread_id] = thread
+
+            thread.start()
+            logger.info(f"THREAD_SAFE_START_SUCCESS: Started thread {thread_name} with ID {thread_id}")
+            return True
+
+        except RuntimeError as e:
+            if "can't start new thread" in str(e):
+                logger.error(f"THREAD_SAFE_START_RUNTIME_ERROR: Cannot start thread {thread_name}: {e}")
+                # Emergency cleanup
+                self.emergency_thread_cleanup()
+                return False
+            else:
+                logger.error(f"THREAD_SAFE_START_OTHER_ERROR: Failed to start thread {thread_name}: {e}")
+                return False
+        except Exception as e:
+            logger.error(f"THREAD_SAFE_START_EXCEPTION: Failed to start thread {thread_name}: {e}")
+            return False
+
+    def emergency_thread_cleanup(self):
+        """Emergency thread cleanup when we hit thread limits"""
+        logger.warning("THREAD_EMERGENCY_CLEANUP: Starting emergency thread cleanup")
+        
+        # Force cleanup of completed threads
+        self.cleanup_completed_threads()
+        
+        # Multiple garbage collection cycles
+        for i in range(3):
+            gc.collect()
+            time.sleep(0.1)
+        
+        # Log status after cleanup
+        current_count = threading.active_count()
+        logger.warning(f"THREAD_EMERGENCY_CLEANUP: Thread count after cleanup: {current_count}")
+        thread_monitor.log_active_threads()
+
     def submit_deployment_task(self, task_func: Callable, task_id: str, *args, **kwargs) -> str:
         """Submit a deployment task with thread monitoring"""
         logger.info(f"THREAD_SUBMIT: Attempting to submit task {task_id}")
@@ -129,57 +216,12 @@ class ThreadManager:
 
     def create_background_thread(self, target_func: Callable, thread_name: str, *args, **kwargs) -> str:
         """Create background thread with strict limits and monitoring"""
-        current_count = threading.active_count()
-        logger.info(f"THREAD_BG_REQUEST: Request to create background thread '{thread_name}' "
-                   f"(Current active: {current_count})")
-
-        # Very strict limits for background threads - reduced further
-        if current_count >= 5:  # Very low limit
-            logger.error(f"THREAD_BG_REJECT: Too many active threads ({current_count}), "
-                        f"rejecting background thread '{thread_name}'")
-            thread_monitor.log_active_threads()
-            raise RuntimeError(f"Maximum active threads exceeded ({current_count})")
-
-        # Use safe thread monitoring
-        if not safe_monitor_thread_creation(thread_name, "background"):
-            logger.error(f"THREAD_BG_REJECT: Thread monitor rejected creation of '{thread_name}'")
-            raise RuntimeError("Thread monitor rejected thread creation")
-
-        thread_id = str(uuid.uuid4())
-
-        def wrapped_target():
-            try:
-                logger.info(f"THREAD_BG_START: Background thread {thread_name} started")
-                target_func(*args, **kwargs)
-                logger.info(f"THREAD_BG_SUCCESS: Background thread {thread_name} completed")
-            except Exception as e:
-                logger.error(f"THREAD_BG_ERROR: Background thread {thread_name} failed: {str(e)}")
-            finally:
-                logger.info(f"THREAD_BG_CLEANUP: Cleaning up background thread {thread_name}")
-                with self._lock:
-                    if thread_id in self.active_threads:
-                        del self.active_threads[thread_id]
-
-        try:
-            thread = threading.Thread(
-                target=wrapped_target,
-                name=thread_name,
-                daemon=True
-            )
-
-            with self._lock:
-                self.active_threads[thread_id] = thread
-
-            thread.start()
-            logger.info(f"THREAD_BG_SUCCESS: Created background thread {thread_name} with ID {thread_id}")
-            thread_monitor.log_active_threads()
-
-            return thread_id
-
-        except Exception as e:
-            logger.error(f"THREAD_BG_CREATION_ERROR: Failed to create background thread {thread_name}: {e}")
-            thread_monitor.log_active_threads()
-            raise
+        # Use the new safe_thread_start method
+        success = self.safe_thread_start(target_func, thread_name, *args, **kwargs)
+        if success:
+            return thread_name  # Return thread name as ID
+        else:
+            raise RuntimeError(f"Failed to start background thread: {thread_name}")
 
     def force_cleanup_ssh_threads(self):
         """Force cleanup of SSH-related threads"""
@@ -311,3 +353,10 @@ def get_thread_manager_status():
 def force_ssh_thread_cleanup():
     """Force cleanup of SSH threads"""
     thread_manager.force_cleanup_ssh_threads()
+
+def safe_start_thread(target_func: Callable, thread_name: str, *args, **kwargs) -> bool:
+    """
+    Global function to safely start threads - replaces direct threading.Thread().start()
+    This should be used instead of creating threads directly in app.py
+    """
+    return thread_manager.safe_thread_start(target_func, thread_name, *args, **kwargs)

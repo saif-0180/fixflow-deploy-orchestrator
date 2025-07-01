@@ -86,7 +86,7 @@ const SystemctlOperations = () => {
           </CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4">
-          <VMSelector value={vmName} onValueChange={setVmName} />
+          <VMSelector onChange={setVmName} value={vmName} />
 
           <div className="grid gap-2">
             <Label htmlFor="service">Service Name</Label>
