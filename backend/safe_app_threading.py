@@ -37,12 +37,12 @@ def safe_start_command_deployment(process_func, deployment_id):
     logger.info(f"SAFE_THREADING: Starting command deployment thread for {deployment_id}")
     return start_operation_thread(process_func, f"command-deployment-{deployment_id}", deployment_id)
 
-def safe_start_rollback_deployment(process_func, deployment_id):
+def safe_start_rollback_deployment(process_func, rollback_id):
     """
     Safe replacement for: threading.Thread(target=process_rollback_deployment, args=(deployment_id,)).start()
     """
-    logger.info(f"SAFE_THREADING: Starting rollback deployment thread for {deployment_id}")
-    return start_operation_thread(process_func, f"rollback-deployment-{deployment_id}", deployment_id)
+    logger.info(f"SAFE_THREADING: Starting rollback deployment thread for {rollback_id}")
+    return start_operation_thread(process_func, f"rollback-deployment-{rollback_id}", rollback_id)
 
 # Generic safe thread starter for any function
 def safe_start_thread(target_func, thread_name, *args, **kwargs):

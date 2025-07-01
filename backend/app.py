@@ -16,6 +16,15 @@ from datetime import datetime, timedelta
 #from routes.db_routes import db_routes
 # Import DB routes
 from backend.routes.db_routes import db_routes
+from backend.safe_app_threading import (
+    safe_start_file_deployment,
+    safe_start_sql_deployment,
+    safe_start_command_deployment,
+    safe_start_rollback_deployment,
+    safe_start_systemd_operation,
+    safe_start_thread,  # Optional: only if you use the generic one
+)
+
 
 # Register the blueprint
 #app.register_blueprint(db_blueprint, url_prefix='/api')
@@ -965,7 +974,7 @@ def run_shell_command():
     
     # Start command execution in a separate thread
     #threading.Thread(target=process_shell_command, args=(deployment_id,)).start()
-    safe_start_file_deployment(process_shell_command, deployment_id)
+    safe_start_command_deployment(process_command_deployment, deployment_id)
     
     logger.info(f"Shell command initiated with ID: {deployment_id}")
     return jsonify({"deploymentId": deployment_id, "commandId": deployment_id})
@@ -1752,7 +1761,7 @@ def rollback_deployment(deployment_id):
     
     # Start rollback in a separate thread
     #threading.Thread(target=process_rollback, args=(rollback_id,)).start()
-    safe_start_file_deployment(process_rollback, rollback_id)
+    safe_start_rollback_deployment(process_rollback_deployment, rollback_id)
 
     logger.info(f"Rollback initiated with ID: {rollback_id}")
     return jsonify({"deploymentId": rollback_id})
@@ -2230,7 +2239,7 @@ def systemd_operation(operation):
     
     # Start systemd operation in a separate thread
     #threading.Thread(target=process_systemd_operation, args=(deployment_id, operation, service, vms)).start()
-    safe_start_file_deployment(process_systemd_operation, deployment_id, operation, service, vms)
+    safe_start_systemd_operation(process_systemd_operation, deployment_id, operation, service, vms)
 
     logger.info(f"Systemd {operation} initiated with ID: {deployment_id}")
     return jsonify({"deploymentId": deployment_id})
