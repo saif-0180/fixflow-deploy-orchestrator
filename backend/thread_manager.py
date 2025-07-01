@@ -1,8 +1,10 @@
+
 import threading
 import time
 import logging
 import queue
 import resource
+import gc
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, Callable, Any, Optional
 import uuid
@@ -20,13 +22,17 @@ def safe_monitor_thread_creation(thread_name: str, context: str) -> bool:
             soft_limit, hard_limit = resource.getrlimit(resource.RLIMIT_NPROC)
             logger.debug(f"THREAD_LIMITS: Soft: {soft_limit}, Hard: {hard_limit}, Current: {current_threads}")
             
-            # -1 means unlimited - always allow
+            # -1 means unlimited - but still check reasonable limits
             if soft_limit == -1:
+                # Even with unlimited, don't allow too many threads
+                if current_threads >= 20:
+                    logger.warning(f"THREAD_CHECK_WARN: Too many threads even with unlimited limit: {current_threads}")
+                    return False
                 logger.debug(f"THREAD_CHECK_OK: Unlimited process limit, allowing {thread_name}")
                 return True
                 
             # Check if we're approaching the actual limit
-            if current_threads >= soft_limit * 0.9:  # 90% of limit
+            if current_threads >= min(soft_limit * 0.8, 15):  # Cap at 15 threads or 80% of limit
                 logger.warning(f"THREAD_CHECK_WARN: Approaching limit for {thread_name}: {current_threads}/{soft_limit}")
                 return False
                 
@@ -36,12 +42,12 @@ def safe_monitor_thread_creation(thread_name: str, context: str) -> bool:
         except Exception as e:
             logger.warning(f"THREAD_CHECK_FALLBACK: Could not check limits for {thread_name}: {e}")
             # Conservative fallback - allow if we have reasonable thread count
-            return current_threads < 50
+            return current_threads < 10
             
     except Exception as e:
         logger.warning(f"THREAD_CHECK_ERROR: Error in thread monitoring for {thread_name}: {e}")
-        # If monitoring fails, be conservative but don't block startup
-        return threading.active_count() < 20
+        # If monitoring fails, be very conservative
+        return threading.active_count() < 5
 
 class ThreadManager:
     """
@@ -49,8 +55,8 @@ class ThreadManager:
     """
 
     def __init__(self, max_workers: Optional[int] = None):
-        # Ultra-conservative threading for Docker
-        self.max_workers = max_workers or 2
+        # Ultra-conservative threading for Docker - reduced even further
+        self.max_workers = max_workers or 1  # Only 1 worker thread
 
         logger.info(f"THREAD_INIT: Initializing ThreadManager with {self.max_workers} workers")
         thread_monitor.log_thread_creation("ThreadManager", "manager")
@@ -127,8 +133,8 @@ class ThreadManager:
         logger.info(f"THREAD_BG_REQUEST: Request to create background thread '{thread_name}' "
                    f"(Current active: {current_count})")
 
-        # Very strict limits for background threads
-        if current_count >= 8:  # Very low limit
+        # Very strict limits for background threads - reduced further
+        if current_count >= 5:  # Very low limit
             logger.error(f"THREAD_BG_REJECT: Too many active threads ({current_count}), "
                         f"rejecting background thread '{thread_name}'")
             thread_monitor.log_active_threads()
@@ -174,6 +180,25 @@ class ThreadManager:
             logger.error(f"THREAD_BG_CREATION_ERROR: Failed to create background thread {thread_name}: {e}")
             thread_monitor.log_active_threads()
             raise
+
+    def force_cleanup_ssh_threads(self):
+        """Force cleanup of SSH-related threads"""
+        logger.info("THREAD_SSH_CLEANUP: Starting forced SSH thread cleanup")
+        
+        # Cleanup completed threads
+        self.cleanup_completed_threads()
+        
+        # Force garbage collection
+        gc.collect()
+        
+        # Wait for cleanup
+        time.sleep(0.2)
+        
+        current_count = threading.active_count()
+        logger.info(f"THREAD_SSH_CLEANUP: Thread count after cleanup: {current_count}")
+        
+        # Log remaining threads
+        thread_monitor.log_active_threads()
 
     def get_thread_pool_status(self) -> Dict[str, Any]:
         """Get thread pool executor status"""
@@ -223,7 +248,7 @@ class ThreadManager:
             "current_thread": threading.current_thread().name
         }
 
-    def shutdown(self, wait: bool = True, timeout: float = 5.0):
+    def shutdown(self, wait: bool = True, timeout: float = 3.0):
         """Shutdown with comprehensive logging"""
         logger.info("THREAD_SHUTDOWN: Starting ThreadManager shutdown...")
         thread_monitor.log_active_threads()
@@ -246,15 +271,15 @@ class ThreadManager:
             for thread_id, thread in active_threads_copy.items():
                 if thread.is_alive():
                     logger.info(f"THREAD_SHUTDOWN: Waiting for thread {thread_id}...")
-                    thread.join(timeout=1.0)  # Very short timeout
+                    thread.join(timeout=0.5)  # Very short timeout
                     if thread.is_alive():
                         logger.warning(f"THREAD_SHUTDOWN: Thread {thread_id} did not complete")
 
         logger.info("THREAD_SHUTDOWN: ThreadManager shutdown completed")
         thread_monitor.log_active_threads()
 
-# Global thread manager instance
-thread_manager = ThreadManager(max_workers=2)
+# Global thread manager instance with ultra-conservative settings
+thread_manager = ThreadManager(max_workers=1)
 
 def thread_safe_update_deployments(deployments: Dict, deployment_id: str, updates: Dict) -> Dict:
     """Thread-safe deployment update"""
@@ -282,3 +307,7 @@ def thread_safe_log_message(deployments: Dict, deployment_id: str, message: str)
 def get_thread_manager_status():
     """Get comprehensive thread manager status"""
     return thread_manager.get_comprehensive_status()
+
+def force_ssh_thread_cleanup():
+    """Force cleanup of SSH threads"""
+    thread_manager.force_cleanup_ssh_threads()

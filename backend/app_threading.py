@@ -42,6 +42,29 @@ class AppThreadingManager:
         
         return thread_manager.thread_safe_operation(save_operation)
     
+    def cleanup_ssh_threads(self):
+        """
+        Clean up SSH-related threads after connection tests
+        """
+        logger.info("THREAD_CLEANUP: Starting SSH thread cleanup")
+        
+        # Force cleanup of completed threads
+        thread_manager.cleanup_completed_threads()
+        
+        # Wait a moment for threads to finish
+        import time
+        time.sleep(0.1)
+        
+        # Get current thread count
+        current_count = threading.active_count()
+        logger.info(f"THREAD_CLEANUP: Thread count after SSH cleanup: {current_count}")
+        
+        # If still too many threads, force garbage collection
+        if current_count > 5:
+            import gc
+            gc.collect()
+            logger.info("THREAD_CLEANUP: Forced garbage collection")
+    
     def get_threading_status(self) -> Dict[str, Any]:
         """
         Get comprehensive threading status for the application
@@ -83,3 +106,7 @@ def safe_save_history(save_func, *args, **kwargs):
 def perform_threading_cleanup():
     """Perform threading cleanup"""
     app_threading_manager.cleanup_and_maintenance()
+
+def cleanup_ssh_threads():
+    """Clean up SSH threads after connection tests"""
+    app_threading_manager.cleanup_ssh_threads()
