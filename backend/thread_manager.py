@@ -52,29 +52,35 @@ def safe_monitor_thread_creation(thread_name: str, context: str) -> bool:
 class ThreadManager:
     """
     Centralized thread management for the application with comprehensive debugging
+    Now runs operations synchronously to avoid Docker thread restrictions
     """
 
     def __init__(self, max_workers: Optional[int] = None):
-        # Ultra-conservative threading for Docker - reduced even further
-        self.max_workers = max_workers or 1  # Only 1 worker thread
+        # For Docker deployment, we'll run operations synchronously
+        self.max_workers = max_workers or 1
+        self.sync_mode = True  # Force synchronous mode for Docker
 
-        logger.info(f"THREAD_INIT: Initializing ThreadManager with {self.max_workers} workers")
+        logger.info(f"THREAD_INIT: Initializing ThreadManager in sync mode")
         thread_monitor.log_thread_creation("ThreadManager", "manager")
 
-        # Use safe thread monitoring instead of the problematic one
-        if not safe_monitor_thread_creation("Pre-ThreadPoolExecutor", "check"):
-            logger.error("THREAD_ERROR: Cannot create ThreadPoolExecutor - thread limit reached")
-            raise RuntimeError("Thread limit reached during initialization")
+        # Don't create ThreadPoolExecutor in sync mode
+        self.executor = None
+        
+        if not self.sync_mode:
+            # Use safe thread monitoring instead of the problematic one
+            if not safe_monitor_thread_creation("Pre-ThreadPoolExecutor", "check"):
+                logger.error("THREAD_ERROR: Cannot create ThreadPoolExecutor - thread limit reached")
+                raise RuntimeError("Thread limit reached during initialization")
 
-        try:
-            self.executor = ThreadPoolExecutor(
-                max_workers=self.max_workers,
-                thread_name_prefix="DeployWorker"
-            )
-            logger.info(f"THREAD_SUCCESS: ThreadPoolExecutor created successfully")
-        except Exception as e:
-            logger.error(f"THREAD_ERROR: Failed to create ThreadPoolExecutor: {e}")
-            raise
+            try:
+                self.executor = ThreadPoolExecutor(
+                    max_workers=self.max_workers,
+                    thread_name_prefix="DeployWorker"
+                )
+                logger.info(f"THREAD_SUCCESS: ThreadPoolExecutor created successfully")
+            except Exception as e:
+                logger.error(f"THREAD_ERROR: Failed to create ThreadPoolExecutor: {e}")
+                raise
 
         self.active_threads: Dict[str, threading.Thread] = {}
         self.thread_results: Dict[str, Any] = {}
@@ -86,18 +92,31 @@ class ThreadManager:
         # Thread-safe dictionaries for shared data
         self._lock = threading.RLock()
 
-        logger.info(f"THREAD_INIT: ThreadManager initialized successfully")
+        logger.info(f"THREAD_INIT: ThreadManager initialized successfully in {'sync' if self.sync_mode else 'async'} mode")
         thread_monitor.log_active_threads()
 
     def safe_thread_start(self, target_func: Callable, thread_name: str, *args, **kwargs) -> bool:
         """
         Safely start a thread with comprehensive error handling and cleanup
-        This replaces direct threading.Thread().start() calls
+        In sync mode, runs the function directly instead of creating a thread
         """
         current_count = threading.active_count()
         logger.info(f"THREAD_SAFE_START: Request to start thread '{thread_name}' "
                    f"(Current active: {current_count})")
 
+        if self.sync_mode:
+            # Run synchronously instead of creating threads
+            logger.info(f"SYNC_MODE: Running {thread_name} synchronously")
+            try:
+                logger.info(f"SYNC_MODE: Starting execution of {thread_name}")
+                target_func(*args, **kwargs)
+                logger.info(f"SYNC_MODE: Successfully completed {thread_name}")
+                return True
+            except Exception as e:
+                logger.error(f"SYNC_MODE: Error executing {thread_name}: {str(e)}")
+                return False
+
+        # Original async logic (kept for non-Docker environments)
         # Very strict limits - prevent "can't start new thread" error
         if current_count >= 3:  # Ultra low limit for pure sync mode
             logger.error(f"THREAD_SAFE_START_REJECT: Too many active threads ({current_count}), "
@@ -180,6 +199,17 @@ class ThreadManager:
         """Submit a deployment task with thread monitoring"""
         logger.info(f"THREAD_SUBMIT: Attempting to submit task {task_id}")
 
+        if self.sync_mode:
+            # Run synchronously
+            logger.info(f"SYNC_MODE: Running task {task_id} synchronously")
+            try:
+                result = self._wrapped_task(task_func, task_id, *args, **kwargs)
+                logger.info(f"SYNC_MODE: Task {task_id} completed successfully")
+                return task_id
+            except Exception as e:
+                logger.error(f"SYNC_MODE: Task {task_id} failed: {str(e)}")
+                raise
+
         # Use safe thread monitoring
         if not safe_monitor_thread_creation(f"Task-{task_id}", "deployment"):
             logger.error(f"THREAD_ERROR: Cannot submit task {task_id} - thread limit reached")
@@ -248,7 +278,8 @@ class ThreadManager:
             return {
                 "max_workers": self.max_workers,
                 "active_tasks": len(self.thread_results),
-                "shutdown_requested": self.shutdown_event.is_set()
+                "shutdown_requested": self.shutdown_event.is_set(),
+                "sync_mode": self.sync_mode
             }
         except Exception as e:
             logger.error(f"Error getting thread pool status: {e}")
@@ -287,7 +318,8 @@ class ThreadManager:
             "monitor_report": thread_monitor.get_thread_report(),
             "system_threads": threading.active_count(),
             "main_thread": threading.main_thread().name,
-            "current_thread": threading.current_thread().name
+            "current_thread": threading.current_thread().name,
+            "sync_mode": self.sync_mode
         }
 
     def shutdown(self, wait: bool = True, timeout: float = 3.0):
@@ -299,11 +331,12 @@ class ThreadManager:
         self.shutdown_event.set()
 
         # Shutdown the thread pool executor with very short timeout
-        try:
-            self.executor.shutdown(wait=wait, timeout=timeout)
-            logger.info("THREAD_SHUTDOWN: ThreadPoolExecutor shutdown completed")
-        except Exception as e:
-            logger.error(f"THREAD_SHUTDOWN_ERROR: Error shutting down executor: {e}")
+        if self.executor:
+            try:
+                self.executor.shutdown(wait=wait, timeout=timeout)
+                logger.info("THREAD_SHUTDOWN: ThreadPoolExecutor shutdown completed")
+            except Exception as e:
+                logger.error(f"THREAD_SHUTDOWN_ERROR: Error shutting down executor: {e}")
 
         # Wait for background threads with short timeout
         if wait:
@@ -320,7 +353,7 @@ class ThreadManager:
         logger.info("THREAD_SHUTDOWN: ThreadManager shutdown completed")
         thread_monitor.log_active_threads()
 
-# Global thread manager instance with ultra-conservative settings
+# Global thread manager instance with sync mode for Docker
 thread_manager = ThreadManager(max_workers=1)
 
 def thread_safe_update_deployments(deployments: Dict, deployment_id: str, updates: Dict) -> Dict:
