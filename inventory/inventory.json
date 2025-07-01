@@ -1,8 +1,8 @@
 
 {
   "vms": [
-    {"name": "batch1", "type": "batch", "ip": "54.165.148.121"},
-    {"name": "airflow", "type": "airflow", "ip": "18.233.158.216"}
+    {"name": "batch1", "type": "batch", "ip": "100.26.139.164"},
+    {"name": "airflow", "type": "airflow", "ip": "34.203.226.144"}
   ],
   "users": ["infadm", "abpwrk1", "root"],
   "systemd_services": ["docker.service", "postgresql-15.service", "zookeeper"]

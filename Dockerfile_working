@@ -23,6 +23,9 @@ ARG USERNAME=infadm
 ARG GROUP_NAME=aimsys
 
 # Create group and user with specific IDs
+#RUN groupadd -g $GROUP_ID $USERNAME && \
+#    useradd -u $USER_ID -g $GROUP_ID -m -s /bin/bash $USERNAME
+
 RUN groupadd -g $GROUP_ID $GROUP_NAME && \
     useradd -u $USER_ID -g $GROUP_NAME -m -s /bin/bash $USERNAME
 
@@ -33,7 +36,7 @@ COPY --from=frontend-build /app/dist /app/frontend/dist
 COPY --from=backend-build /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY backend /app/backend
 
-# Install ansible, SSH dependencies, PostgreSQL client, and Linux networking/diagnostic tools
+# Install ansible, SSH dependencies, and PostgreSQL client
 RUN apt-get update && \
     apt-get install -y \
         ansible \
@@ -42,28 +45,6 @@ RUN apt-get update && \
         procps \
         sudo \
         postgresql-client \
-        telnet \
-        curl \
-        wget \
-        netcat-traditional \
-        net-tools \
-        iproute2 \
-        iputils-ping \
-        dnsutils \
-        traceroute \
-        tcpdump \
-        nmap \
-        htop \
-        iotop \
-        strace \
-        lsof \
-        tree \
-        vim \
-        nano \
-        zip \
-        unzip \
-        git \
-        jq \
         && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*

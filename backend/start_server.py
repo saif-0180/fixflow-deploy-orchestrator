@@ -10,6 +10,8 @@ import logging
 import argparse
 from backend.thread_monitor import thread_monitor, log_app_startup
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 # Set up logging before importing anything else
 logging.basicConfig(
     level=logging.INFO,
@@ -29,16 +31,25 @@ def start_with_gunicorn():
     
     # Import after logging setup
     from backend.app import app
-    
-    # Gunicorn command
     cmd = [
-        'gunicorn',
+        'python3',
+        '-m', 'gunicorn',
         '--config', 'backend/gunicorn_config.py',
         'backend.app:app'
     ]
-    
+
     logger.info(f"STARTUP: Executing command: {' '.join(cmd)}")
-    os.execvp('gunicorn', cmd)
+    os.execvp('python3', cmd)
+
+    # Gunicorn command
+#    cmd = [
+#        'gunicorn',
+#        '--config', 'gunicorn_config.py',
+#        'backend.app:app'
+#    ]
+#    
+#    logger.info(f"STARTUP: Executing command: {' '.join(cmd)}")
+#    os.execvp('gunicorn', cmd)
 
 def start_with_waitress():
     """Start the application using Waitress (fallback)"""

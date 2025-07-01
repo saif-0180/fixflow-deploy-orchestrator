@@ -15,7 +15,7 @@ from werkzeug.utils import secure_filename
 from datetime import datetime, timedelta
 #from routes.db_routes import db_routes
 # Import DB routes
-from routes.db_routes import db_routes
+from backend.routes.db_routes import db_routes
 
 # Register the blueprint
 #app.register_blueprint(db_blueprint, url_prefix='/api')
