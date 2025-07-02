@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import LogDisplay from '@/components/LogDisplay';
 import { Loader2, RefreshCw } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface Deployment {
   id: string;
@@ -22,11 +22,13 @@ interface Deployment {
   command?: string;
   logs?: string[];
   original_deployment?: string;
+  logged_in_user?: string;
 }
 
 const DeploymentHistory: React.FC = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [selectedDeploymentId, setSelectedDeploymentId] = useState<string | null>(null);
   const [deploymentLogs, setDeploymentLogs] = useState<string[]>([]);
   const [clearDays, setClearDays] = useState<number>(30);
@@ -220,26 +222,28 @@ const DeploymentHistory: React.FC = () => {
     }
   }, [deployments, selectedDeploymentId, isLoadingDeployments]);
 
-  // Format deployment summary for display
+  // Format deployment summary for display with username
   const formatDeploymentSummary = (deployment: Deployment): string => {
     // Convert timestamp to readable format
     const dateTime = deployment.timestamp ? 
       new Date(deployment.timestamp).toLocaleString() : 
       'Unknown date';
 
+    const userPrefix = deployment.logged_in_user ? `User: ${deployment.logged_in_user} - ` : '';
+
     switch (deployment.type) {
       case 'file':
-        return `FT=${deployment.ft || 'N/A'}, File=${deployment.file || 'N/A'}, Status=${deployment.status}, ${dateTime}`;
+        return `${userPrefix}FT=${deployment.ft || 'N/A'}, File=${deployment.file || 'N/A'}, Status=${deployment.status}, ${dateTime}`;
       case 'sql':
-        return `SQL: ${deployment.ft || 'N/A'}/${deployment.file || 'N/A'}, Status=${deployment.status}, ${dateTime}`;
+        return `${userPrefix}SQL: ${deployment.ft || 'N/A'}/${deployment.file || 'N/A'}, Status=${deployment.status}, ${dateTime}`;
       case 'systemd':
-        return `Service ${deployment.operation || 'N/A'} ${deployment.service || 'N/A'}, Status=${deployment.status}, ${dateTime}`;
+        return `${userPrefix}Service ${deployment.operation || 'N/A'} ${deployment.service || 'N/A'}, Status=${deployment.status}, ${dateTime}`;
       case 'command':
-        return `Command: ${deployment.command ? `${deployment.command.substring(0, 30)}${deployment.command.length > 30 ? '...' : ''}` : 'N/A'}, Status=${deployment.status}, ${dateTime}`;
+        return `${userPrefix}Command: ${deployment.command ? `${deployment.command.substring(0, 30)}${deployment.command.length > 30 ? '...' : ''}` : 'N/A'}, Status=${deployment.status}, ${dateTime}`;
       case 'rollback':
-        return `Rollback: ${deployment.ft || 'N/A'}/${deployment.file || 'N/A'}, Status=${deployment.status}, ${dateTime}`;
+        return `${userPrefix}Rollback: ${deployment.ft || 'N/A'}/${deployment.file || 'N/A'}, Status=${deployment.status}, ${dateTime}`;
       default:
-        return `${deployment.type} (${deployment.status}), ${dateTime}`;
+        return `${userPrefix}${deployment.type} (${deployment.status}), ${dateTime}`;
     }
   };
 
@@ -262,6 +266,46 @@ const DeploymentHistory: React.FC = () => {
     if (window.confirm("Are you sure you want to rollback this deployment? This will restore the previous version of the file.")) {
       rollbackMutation.mutate(deploymentId);
     }
+  };
+
+  // Get deployment details with logged in user info
+  const getDeploymentDetailsText = (): string => {
+    const deployment = getSelectedDeployment();
+    if (!deployment) return "Select a deployment to view details";
+    
+    let details = '';
+    if (deployment.logged_in_user) {
+      details += `Logged-in User: ${deployment.logged_in_user}\n`;
+    }
+    
+    if (deployment.type === 'file' || deployment.type === 'rollback') {
+      details += `FT: ${deployment.ft || 'N/A'}\n`;
+      details += `File: ${deployment.file || 'N/A'}\n`;
+      if (deployment.vms) {
+        details += `VMs: ${deployment.vms.join(', ')}\n`;
+      }
+    } else if (deployment.type === 'sql') {
+      details += `SQL: ${deployment.ft || 'N/A'}/${deployment.file || 'N/A'}\n`;
+      if (deployment.vms) {
+        details += `VMs: ${deployment.vms.join(', ')}\n`;
+      }
+    } else if (deployment.type === 'systemd') {
+      details += `Service: ${deployment.service || 'N/A'}\n`;
+      details += `Operation: ${deployment.operation || 'N/A'}\n`;
+      if (deployment.vms) {
+        details += `VMs: ${deployment.vms.join(', ')}\n`;
+      }
+    } else if (deployment.type === 'command') {
+      details += `Command: ${deployment.command || 'N/A'}\n`;
+      if (deployment.vms) {
+        details += `VMs: ${deployment.vms.join(', ')}\n`;
+      }
+    }
+    
+    details += `Status: ${deployment.status}\n`;
+    details += `Timestamp: ${deployment.timestamp ? new Date(deployment.timestamp).toLocaleString() : 'N/A'}`;
+    
+    return details;
   };
 
   // Get deployment details safely with a fallback
@@ -376,7 +420,6 @@ const DeploymentHistory: React.FC = () => {
             logs={deploymentLogs} 
             height="400px" 
             title={`Deployment Details - ${getDeploymentSummary()}`}
-            fixAutoScroll={true}
             status={logStatus}
           />
           
