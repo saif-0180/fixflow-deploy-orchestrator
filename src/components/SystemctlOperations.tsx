@@ -17,7 +17,7 @@ const SystemctlOperations = () => {
   const [operation, setOperation] = useState<string>('status');
   const [logs, setLogs] = useState<string[]>([]);
   const [deploymentId, setDeploymentId] = useState<string | null>(null);
-  const [status, setStatus] = useState<'idle' | 'loading' | 'running' | 'success' | 'failed' | 'timeout'>('idle');
+  const [status, setStatus] = useState<'idle' | 'loading' | 'running' | 'success' | 'failed' | 'completed'>('idle');
   
   // Use ref to store cleanup function
   const pollCleanupRef = useRef<(() => void) | null>(null);
@@ -108,8 +108,9 @@ const SystemctlOperations = () => {
       // If operation is already complete, don't start polling
       if (initialData.status && initialData.status !== 'running') {
         console.log(`Operation already completed with status: ${initialData.status}`);
-        setStatus(initialData.status);
-        addCompletionMessage(initialData.status);
+        const finalStatus = initialData.status === 'timeout' ? 'failed' : initialData.status;
+        setStatus(finalStatus);
+        addCompletionMessage(finalStatus);
         return;
       }
       
@@ -154,8 +155,9 @@ const SystemctlOperations = () => {
           // Check completion status
           if (data.status && data.status !== 'running') {
             console.log(`Operation completed with status: ${data.status}`);
-            setStatus(data.status);
-            addCompletionMessage(data.status);
+            const finalStatus = data.status === 'timeout' ? 'failed' : data.status;
+            setStatus(finalStatus);
+            addCompletionMessage(finalStatus);
             clearInterval(pollInterval);
             return;
           }
@@ -166,7 +168,7 @@ const SystemctlOperations = () => {
           if (pollCount >= maxPollCount) {
             console.log('Polling timeout reached');
             clearInterval(pollInterval);
-            setStatus('timeout');
+            setStatus('failed');
             setLogs(prev => [...prev, '⚠️ Operation timed out after 60 seconds']);
           }
           
