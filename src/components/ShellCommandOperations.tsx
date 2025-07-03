@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -15,9 +14,11 @@ import {
 } from "@/components/ui/select";
 import LogDisplay from '@/components/LogDisplay';
 import VMSelector from '@/components/VMSelector';
+import { useAuth } from '@/contexts/AuthContext';
 
 const ShellCommandOperations: React.FC = () => {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [command, setCommand] = useState<string>("");
   const [selectedVMs, setSelectedVMs] = useState<string[]>([]);
   const [logs, setLogs] = useState<string[]>([]);
@@ -280,7 +281,7 @@ const ShellCommandOperations: React.FC = () => {
             logs={logs} 
             height="400px" 
             fixedHeight={true} 
-            title="Shell Command Logs" 
+            title={`Shell Command Logs${user?.username ? ` - User: ${user.username}` : ''}`}
             status={operationStatus}
           />
         </div>

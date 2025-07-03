@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,9 +9,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import LogDisplay from './LogDisplay';
 import DatabaseConnectionSelector from './DatabaseConnectionSelector';
+import { useAuth } from '@/contexts/AuthContext';
 
 const SqlOperations = () => {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [selectedFT, setSelectedFT] = useState<string>('');
   const [selectedFile, setSelectedFile] = useState<string>('');
   const [selectedHostname, setSelectedHostname] = useState<string>('');
@@ -266,7 +267,7 @@ const SqlOperations = () => {
       
       <LogDisplay 
         logs={logs} 
-        title="SQL Execution Logs" 
+        title={`SQL Execution Logs${user?.username ? ` - User: ${user.username}` : ''}`}
         height="400px"
         status={logStatus}
       />

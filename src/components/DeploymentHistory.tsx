@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -230,6 +229,7 @@ const DeploymentHistory: React.FC = () => {
       new Date(deployment.timestamp).toLocaleString() : 
       'Unknown date';
 
+    // ALWAYS show user prefix for ALL deployment types
     const userPrefix = deployment.logged_in_user ? `User: ${deployment.logged_in_user} - ` : '';
 
     switch (deployment.type) {

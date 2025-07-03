@@ -33,91 +33,88 @@ const SystemctlOperations: React.FC = () => {
   const [lastRefreshedTime, setLastRefreshedTime] = useState<string>(new Date().toLocaleTimeString());
   const [apiErrorMessage, setApiErrorMessage] = useState<string>("");
 
-  // Fetch VMs from inventory
-  const { data: vms, isLoading: isLoadingVms, isError: isErrorVms } = useQuery({
+  // Fetch VMs from inventory with better error handling
+  const { data: vms = [], isLoading: isLoadingVms, isError: isErrorVms, refetch: refetchVms } = useQuery({
     queryKey: ['vms'],
     queryFn: async () => {
       setApiErrorMessage(""); // Clear any previous errors
       try {
         const response = await fetch('/api/inventory/vms');
-        // Add explicit error handling for non-JSON responses
-        const contentType = response.headers.get("content-type");
-        if (contentType && contentType.indexOf("application/json") === -1) {
-          const errorText = await response.text();
-          console.error(`Server returned non-JSON response: ${errorText}`);
-          setApiErrorMessage("API returned HTML instead of JSON. Backend service might be unavailable.");
-          return [];
-        }
         
         if (!response.ok) {
-          const errorText = await response.text();
-          console.error(`Failed to fetch vms: ${errorText}`);
-          setApiErrorMessage(`Failed to fetch vms: ${response.status} ${response.statusText}`);
-          throw new Error('Failed to fetch vms');
+          if (response.status === 404) {
+            throw new Error('VM inventory endpoint not found. Please check backend configuration.');
+          }
+          throw new Error(`Failed to fetch VMs: ${response.status} ${response.statusText}`);
+        }
+        
+        // Check if response is JSON
+        const contentType = response.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+          throw new Error("Server returned non-JSON response. Backend service might be unavailable.");
         }
         
         const data = await response.json();
-        console.log("Received vms data:", data);
+        console.log("Received VMs data:", data);
         setLastRefreshedTime(new Date().toLocaleTimeString());
         return data as VM[];
       } catch (error) {
-        console.error(`Error in vms fetch: ${error}`);
-        if (error instanceof SyntaxError) {
-          setApiErrorMessage("Server returned invalid JSON. The backend might be down or misconfigured.");
-        } else {
-          setApiErrorMessage(`Error fetching vms: ${error instanceof Error ? error.message : String(error)}`);
-        }
-        return []; // Return empty array instead of throwing to avoid UI errors
+        console.error(`Error fetching VMs: ${error}`);
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+        setApiErrorMessage(errorMessage);
+        throw error;
       }
     },
-    staleTime: 300000, // 5 minutes - consider data fresh for 5 minutes
-    refetchInterval: 1800000, // Refetch every 30 minutes
-    refetchOnWindowFocus: false, // Don't refetch on window focus
-    retry: 2,
+    staleTime: 300000, // 5 minutes
+    refetchInterval: false, // Disable automatic refetching
+    refetchOnWindowFocus: false,
+    retry: 1,
   });
 
-  // Fetch systemd services from inventory
-  const { data: services, isLoading: isLoadingServices, isError: isErrorServices } = useQuery({
+  // Fetch systemd services from inventory with better error handling
+  const { data: services = [], isLoading: isLoadingServices, isError: isErrorServices, refetch: refetchServices } = useQuery({
     queryKey: ['systemd-services'],
     queryFn: async () => {
       setApiErrorMessage(""); // Clear any previous errors
       try {
         const response = await fetch('/api/inventory/systemd_services');
-        // Add explicit error handling for non-JSON responses
-        const contentType = response.headers.get("content-type");
-        if (contentType && contentType.indexOf("application/json") === -1) {
-          const errorText = await response.text();
-          console.error(`Server returned non-JSON response: ${errorText}`);
-          setApiErrorMessage("API returned HTML instead of JSON. Backend service might be unavailable.");
-          return [];
-        }
         
         if (!response.ok) {
-          const errorText = await response.text();
-          console.error(`Failed to fetch systemd_services: ${errorText}`);
-          setApiErrorMessage(`Failed to fetch systemd_services: ${response.status} ${response.statusText}`);
-          throw new Error('Failed to fetch systemd_services');
+          if (response.status === 404) {
+            throw new Error('Systemd services endpoint not found. Please check backend configuration.');
+          }
+          throw new Error(`Failed to fetch services: ${response.status} ${response.statusText}`);
+        }
+        
+        // Check if response is JSON
+        const contentType = response.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+          throw new Error("Server returned non-JSON response. Backend service might be unavailable.");
         }
         
         const data = await response.json();
-        console.log("Received systemd_services data:", data);
+        console.log("Received services data:", data);
         setLastRefreshedTime(new Date().toLocaleTimeString());
         return data as string[];
       } catch (error) {
-        console.error(`Error in systemd_services fetch: ${error}`);
-        if (error instanceof SyntaxError) {
-          setApiErrorMessage("Server returned invalid JSON. The backend might be down or misconfigured.");
-        } else {
-          setApiErrorMessage(`Error fetching systemd_services: ${error instanceof Error ? error.message : String(error)}`);
-        }
-        return []; // Return empty array instead of throwing to avoid UI errors
+        console.error(`Error fetching services: ${error}`);
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+        setApiErrorMessage(errorMessage);
+        throw error;
       }
     },
-    staleTime: 300000, // 5 minutes - consider data fresh for 5 minutes
-    refetchInterval: 1800000, // Refetch every 30 minutes
-    refetchOnWindowFocus: false, // Don't refetch on window focus
-    retry: 2,
+    staleTime: 300000, // 5 minutes
+    refetchInterval: false, // Disable automatic refetching
+    refetchOnWindowFocus: false,
+    retry: 1,
   });
+
+  // Manual refresh function
+  const handleRefresh = () => {
+    setApiErrorMessage("");
+    refetchVms();
+    refetchServices();
+  };
 
   const executeSystemctl = async (operation: string, service: string, selectedVms: string[]) => {
     if (!service.trim()) {
@@ -169,7 +166,7 @@ const SystemctlOperations: React.FC = () => {
 
       const timeoutId = setTimeout(() => {
         if (logStatus === 'running') {
-          setLogStatus('failed'); // Changed from 'timeout' to 'failed'
+          setLogStatus('failed');
           setLogs(prev => [...prev, 'Operation timed out after 5 minutes']);
         }
       }, 300000);
@@ -221,19 +218,47 @@ const SystemctlOperations: React.FC = () => {
         {/* Configuration Section */}
         <Card className="bg-[#EEEEEE]">
           <CardHeader>
-            <CardTitle className="text-[#F79B72]">Configuration</CardTitle>
+            <div className="flex justify-between items-center">
+              <CardTitle className="text-[#F79B72]">Configuration</CardTitle>
+              <Button
+                type="button"
+                onClick={handleRefresh}
+                className="bg-[#2A4759] text-white hover:bg-[#2A4759]/80 h-8 w-8 p-0"
+                title="Refresh inventory data"
+                disabled={isLoadingVms || isLoadingServices}
+              >
+                {isLoadingVms || isLoadingServices ? 
+                  <Loader2 className="h-4 w-4 animate-spin" /> : 
+                  <RefreshCw className="h-4 w-4" />
+                }
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* Error Display */}
+            {apiErrorMessage && (
+              <div className="p-4 bg-red-100 text-red-800 rounded-md">
+                <p className="font-medium">API Error:</p>
+                <p className="text-sm">{apiErrorMessage}</p>
+                <p className="text-xs mt-2">Try refreshing or check if the backend is running properly.</p>
+              </div>
+            )}
+
             {/* VM Selection */}
             <div>
               <Label className="text-[#2A4759]">Select VMs:</Label>
               <div className="flex flex-wrap gap-2 mt-2">
                 {isLoadingVms ? (
-                  <div className="flex items-center justify-center">
+                  <div className="flex items-center justify-center p-2">
                     <Loader2 className="h-4 w-4 animate-spin text-[#F79B72]" />
+                    <span className="ml-2 text-[#2A4759]">Loading VMs...</span>
+                  </div>
+                ) : isErrorVms || vms.length === 0 ? (
+                  <div className="text-[#2A4759] text-sm">
+                    {apiErrorMessage ? "Failed to load VMs" : "No VMs available"}
                   </div>
                 ) : (
-                  vms?.map((vm) => (
+                  vms.map((vm) => (
                     <Button
                       key={vm.name}
                       variant={selectedVms.includes(vm.name) ? "default" : "outline"}
@@ -249,12 +274,6 @@ const SystemctlOperations: React.FC = () => {
                       {vm.name}
                     </Button>
                   ))
-                )}
-                {apiErrorMessage && (
-                  <div className="p-4 bg-red-100 text-red-800 rounded-md mb-4">
-                    <p className="font-medium">API Error:</p>
-                    <p className="text-sm">{apiErrorMessage}</p>
-                  </div>
                 )}
               </div>
             </div>
@@ -279,8 +298,13 @@ const SystemctlOperations: React.FC = () => {
             <div>
               <Label htmlFor="service" className="text-[#2A4759]">Service:</Label>
               {isLoadingServices ? (
-                <div className="flex items-center justify-center p-2">
+                <div className="flex items-center justify-center p-2 border rounded bg-white">
                   <Loader2 className="h-4 w-4 animate-spin text-[#F79B72]" />
+                  <span className="ml-2 text-[#2A4759]">Loading services...</span>
+                </div>
+              ) : isErrorServices || services.length === 0 ? (
+                <div className="p-2 border rounded bg-white text-[#2A4759] text-sm">
+                  {apiErrorMessage ? "Failed to load services" : "No services available"}
                 </div>
               ) : (
                 <Select value={service} onValueChange={setService}>
@@ -288,7 +312,7 @@ const SystemctlOperations: React.FC = () => {
                     <SelectValue placeholder="Select service" />
                   </SelectTrigger>
                   <SelectContent>
-                    {services?.map((serviceName) => (
+                    {services.map((serviceName) => (
                       <SelectItem key={serviceName} value={serviceName}>
                         {serviceName}
                       </SelectItem>
@@ -302,7 +326,7 @@ const SystemctlOperations: React.FC = () => {
             <Button
               onClick={() => executeSystemctl(operation, service, selectedVms)}
               className="bg-[#F79B72] text-[#2A4759] hover:bg-[#F79B72]/80"
-              disabled={logStatus === 'loading' || logStatus === 'running'}
+              disabled={logStatus === 'loading' || logStatus === 'running' || !service || selectedVms.length === 0}
             >
               {logStatus === 'loading' || logStatus === 'running' ? (
                 <>
