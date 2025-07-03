@@ -1,7 +1,7 @@
 
 {
   "vms": [
-    {"name": "batch1", "type": "batch", "ip": "18.234.52.95"},
+    {"name": "batch1", "type": "batch", "ip": "54.173.6.57"}
   ],
   "users": ["infadm", "abpwrk1", "root"],
   "systemd_services": ["docker.service", "postgresql-15.service", "zookeeper"]

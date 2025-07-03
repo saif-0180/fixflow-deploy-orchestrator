@@ -7,13 +7,13 @@ COPY . .
 RUN npm run build
 
 # Backend Build Stage
-FROM python:3.11-slim as backend-build
+FROM python:3.10-slim as backend-build
 WORKDIR /app/backend
 COPY backend/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Final Stage
-FROM python:3.11-slim
+FROM python:3.10-slim
 WORKDIR /app
 
 # Create user and group with same IDs as host infadm user
@@ -33,7 +33,7 @@ RUN groupadd -g $GROUP_ID $GROUP_NAME && \
 COPY --from=frontend-build /app/dist /app/frontend/dist
 
 # Copy backend from backend stage
-COPY --from=backend-build /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=backend-build /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
 COPY backend /app/backend
 
 # Install ansible, SSH dependencies, and PostgreSQL client

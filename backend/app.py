@@ -12,6 +12,7 @@ import tempfile
 import re
 from logging.handlers import RotatingFileHandler
 from werkzeug.utils import secure_filename
+from routes.auth_routes import auth_bp
 from datetime import datetime, timedelta
 #from routes.db_routes import db_routes
 # Import DB routes
@@ -25,7 +26,7 @@ app = Flask(__name__, static_folder='../frontend/dist')
 
 # Register the blueprint
 app.register_blueprint(db_routes)
-
+app.register_blueprint(auth_bp)
 #app.register_blueprint(db_routes)
 
 # Directory where fix files are stored
@@ -279,7 +280,7 @@ def check_ssh_setup():
             logger.info("SSH private key found and permissions set to 600")
             
             # Also check that the .ssh directory has proper permissions
-            os.chmod("/root/.ssh", 0o700)
+            os.chmod("/home/users/infadm/.ssh", 0o700)
             logger.info("SSH directory permissions set to 700")
 
             # Check control_path_dir permissions
