@@ -222,7 +222,7 @@ const DeploymentHistory: React.FC = () => {
     }
   }, [deployments, selectedDeploymentId, isLoadingDeployments]);
 
-  // Format deployment summary for display with username
+  // Format deployment summary for display with username at the beginning
   const formatDeploymentSummary = (deployment: Deployment): string => {
     // Convert timestamp to readable format
     const dateTime = deployment.timestamp ? 
@@ -233,11 +233,11 @@ const DeploymentHistory: React.FC = () => {
 
     switch (deployment.type) {
       case 'file':
-        return `${userPrefix}FT=${deployment.ft || 'N/A'}, File=${deployment.file || 'N/A'}, Status=${deployment.status}, ${dateTime}`;
+        return `${userPrefix}File: FT=${deployment.ft || 'N/A'}, File=${deployment.file || 'N/A'}, Status=${deployment.status}, ${dateTime}`;
       case 'sql':
         return `${userPrefix}SQL: ${deployment.ft || 'N/A'}/${deployment.file || 'N/A'}, Status=${deployment.status}, ${dateTime}`;
       case 'systemd':
-        return `${userPrefix}Service ${deployment.operation || 'N/A'} ${deployment.service || 'N/A'}, Status=${deployment.status}, ${dateTime}`;
+        return `${userPrefix}Systemctl: ${deployment.operation || 'N/A'} ${deployment.service || 'N/A'}, Status=${deployment.status}, ${dateTime}`;
       case 'command':
         return `${userPrefix}Command: ${deployment.command ? `${deployment.command.substring(0, 30)}${deployment.command.length > 30 ? '...' : ''}` : 'N/A'}, Status=${deployment.status}, ${dateTime}`;
       case 'rollback':
@@ -268,12 +268,14 @@ const DeploymentHistory: React.FC = () => {
     }
   };
 
-  // Get deployment details with logged in user info
+  // Get deployment details with logged in user info prominently displayed
   const getDeploymentDetailsText = (): string => {
     const deployment = getSelectedDeployment();
     if (!deployment) return "Select a deployment to view details";
     
     let details = '';
+    
+    // Show logged-in user first and prominently
     if (deployment.logged_in_user) {
       details += `Logged-in User: ${deployment.logged_in_user}\n`;
     }

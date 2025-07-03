@@ -278,14 +278,24 @@ const SystemctlOperations: React.FC = () => {
             {/* Service Selection */}
             <div>
               <Label htmlFor="service" className="text-[#2A4759]">Service:</Label>
-              <Input
-                id="service"
-                type="text"
-                value={service}
-                onChange={(e) => setService(e.target.value)}
-                className="bg-white border-[#2A4759] text-[#2A4759]"
-                placeholder="Enter service name"
-              />
+              {isLoadingServices ? (
+                <div className="flex items-center justify-center p-2">
+                  <Loader2 className="h-4 w-4 animate-spin text-[#F79B72]" />
+                </div>
+              ) : (
+                <Select value={service} onValueChange={setService}>
+                  <SelectTrigger className="bg-white border-[#2A4759] text-[#2A4759]">
+                    <SelectValue placeholder="Select service" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {services?.map((serviceName) => (
+                      <SelectItem key={serviceName} value={serviceName}>
+                        {serviceName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
             
             {/* Execute Button */}
