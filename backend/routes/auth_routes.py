@@ -137,10 +137,12 @@ def get_users():
                 'created_at': user_data.get('created_at', '')
             })
         
-        return jsonify({'users': user_list})
+        # Return the array directly, not wrapped in 'users' key
+        return jsonify(user_list)
         
     except Exception as e:
         return jsonify({'error': 'Failed to get users'}), 500
+
 
 @auth_bp.route('/api/auth/users', methods=['POST'])
 def create_user():
