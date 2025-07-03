@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -316,11 +317,26 @@ const DeploymentHistory: React.FC = () => {
     return deployments.find(d => d.id === selectedDeploymentId);
   };
 
-  // Safe access to deployment summary
+  // Safe access to deployment summary with logged-in user in title
   const getDeploymentSummary = (): string => {
     const deployment = getSelectedDeployment();
     if (!deployment) return "Select a deployment to view details";
-    return formatDeploymentSummary(deployment);
+    
+    const userInfo = deployment.logged_in_user ? `User: ${deployment.logged_in_user} - ` : '';
+    const typeInfo = deployment.type === 'rollback' ? 
+      `Rollback: ${deployment.ft || 'N/A'}/${deployment.file || 'N/A'}` :
+      deployment.type === 'file' ?
+      `File: FT=${deployment.ft || 'N/A'}, File=${deployment.file || 'N/A'}` :
+      deployment.type === 'systemd' ?
+      `Systemctl: ${deployment.operation || 'N/A'} ${deployment.service || 'N/A'}` :
+      deployment.type;
+    
+    const statusInfo = `Status=${deployment.status}`;
+    const dateTime = deployment.timestamp ? 
+      new Date(deployment.timestamp).toLocaleString() : 
+      'Unknown date';
+    
+    return `${userInfo}${typeInfo}, ${statusInfo}, ${dateTime}`;
   };
 
   const displayDeployments = deployments;

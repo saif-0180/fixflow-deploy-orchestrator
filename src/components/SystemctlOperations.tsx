@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { ListChecks, Play, RefreshCw, Loader2 } from 'lucide-react';
+import { Play, RefreshCw, Loader2 } from 'lucide-react';
 import LogDisplay from '@/components/LogDisplay';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -323,7 +323,7 @@ const SystemctlOperations: React.FC = () => {
         <LogDisplay 
           logs={logs} 
           height="400px" 
-          title="Execution Logs"
+          title={`Execution Logs${user?.username ? ` - User: ${user.username}` : ''}`}
           status={logStatus}
         />
       </div>
