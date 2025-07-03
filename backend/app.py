@@ -14,6 +14,7 @@ from logging.handlers import RotatingFileHandler
 from werkzeug.utils import secure_filename
 from routes.auth_routes import auth_bp
 from datetime import datetime, timedelta
+from routes.auth_routes import get_current_user
 #from routes.db_routes import db_routes
 # Import DB routes
 from routes.db_routes import db_routes
@@ -411,19 +412,25 @@ def get_systemd_services():
     logger.info("Getting list of systemd services")
     return jsonify(inventory["systemd_services"])
 
+    
 # API to deploy a file
 @app.route('/api/deploy/file', methods=['POST'])
 def deploy_file():
+    # Get current authenticated user
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({"error": "Authentication required"}), 401
+    
     data = request.json
     ft = data.get('ft')
     file_name = data.get('file')
-    user = data.get('user')
+    user = data.get('user')  # This is the target user for deployment
     target_path = data.get('targetPath')
     vms = data.get('vms')
     sudo = data.get('sudo', False)
     create_backup = data.get('createBackup', True)  # Default to true for safety
     
-    logger.info(f"File deployment request received: {file_name} from FT {ft} to {len(vms)} VMs")
+    logger.info(f"File deployment request received from {current_user['username']}: {file_name} from FT {ft} to {len(vms)} VMs")
     
     if not all([ft, file_name, user, target_path, vms]):
         logger.error("Missing required parameters for file deployment")
@@ -432,13 +439,15 @@ def deploy_file():
     # Generate a unique deployment ID
     deployment_id = str(uuid.uuid4())
     
-    # Store deployment information
+    # Store deployment information with logged-in user
     deployments[deployment_id] = {
         "id": deployment_id,
         "type": "file",
         "ft": ft,
         "file": file_name,
-        "user": user,
+        "user": user,  # Target user for deployment
+        "logged_in_user": current_user['username'],  # User who initiated the deployment
+        "user_role": current_user['role'],  # Role of the user who initiated
         "target_path": target_path,
         "vms": vms,
         "sudo": sudo,
@@ -454,8 +463,11 @@ def deploy_file():
     # Start deployment in a separate thread
     threading.Thread(target=process_file_deployment, args=(deployment_id,)).start()
     
-    logger.info(f"File deployment initiated with ID: {deployment_id}")
-    return jsonify({"deploymentId": deployment_id})
+    logger.info(f"File deployment initiated by {current_user['username']} with ID: {deployment_id}")
+    return jsonify({
+        "deploymentId": deployment_id,
+        "initiatedBy": current_user['username']
+    })
 
 def process_file_deployment(deployment_id):
     deployment = deployments[deployment_id]
@@ -463,19 +475,21 @@ def process_file_deployment(deployment_id):
     try:
         ft = deployment["ft"]
         file_name = deployment["file"]
-        user = deployment["user"]
+        user = deployment["user"]  # Target user for deployment
+        logged_in_user = deployment["logged_in_user"]  # User who initiated
         target_path = deployment["target_path"]
         vms = deployment["vms"]
         sudo = deployment["sudo"]
         create_backup = deployment.get("create_backup", True)
         
         source_file = os.path.join(FIX_FILES_DIR, 'AllFts', ft, file_name)
-        logger.info(f"Processing file deployment from {source_file}")
+        logger.info(f"Processing file deployment from {source_file} initiated by {logged_in_user}")
 
         # Add debug logging to see actual values
+        log_message(deployment_id, f"DEBUG: Deployment initiated by user: {logged_in_user}")
         log_message(deployment_id, f"DEBUG: target_path = {target_path}")
         log_message(deployment_id, f"DEBUG: file_name = {file_name}")
-        log_message(deployment_id, f"DEBUG: user = {user}")
+        log_message(deployment_id, f"DEBUG: target_user = {user}")
         log_message(deployment_id, f"DEBUG: sudo = {sudo}")
         
         if not os.path.exists(source_file):
@@ -486,7 +500,7 @@ def process_file_deployment(deployment_id):
             save_deployment_history()
             return
         
-        log_message(deployment_id, f"Starting file deployment for {file_name} to {len(vms)} VMs")
+        log_message(deployment_id, f"Starting file deployment for {file_name} to {len(vms)} VMs (initiated by {logged_in_user})")
         
         # Generate an ansible playbook for file deployment
         playbook_file = f"/tmp/file_deploy_{deployment_id}.yml"
@@ -497,7 +511,7 @@ def process_file_deployment(deployment_id):
         
         with open(playbook_file, 'w') as f:
             f.write(f"""---
-- name: Deploy file to VMs
+- name: Deploy file to VMs (initiated by {logged_in_user})
   hosts: deployment_targets
   gather_facts: false
   become: {"true" if sudo else "false"}
@@ -536,7 +550,7 @@ def process_file_deployment(deployment_id):
     # Log backup creation
     - name: Log backup result
       ansible.builtin.debug:
-        msg: "Created backup at {{ backup_result.dest }}"
+        msg: "Created backup at {{ backup_result.dest }} (deployment by {logged_in_user})"
       when: backup_result.changed is defined and backup_result.changed
       
     # Copy the file to the target location
@@ -550,7 +564,7 @@ def process_file_deployment(deployment_id):
       
     - name: Log copy result
       ansible.builtin.debug:
-        msg: "File copied successfully to {{ inventory_hostname }}"
+        msg: "File copied successfully to {{ inventory_hostname }} (deployment by {logged_in_user})"
       when: copy_result.changed
 """)
         logger.debug(f"Created Ansible playbook: {playbook_file}")
@@ -619,13 +633,13 @@ def process_file_deployment(deployment_id):
         process.wait()
         
         if process.returncode == 0:
-            log_message(deployment_id, "SUCCESS: File deployment completed successfully")
+            log_message(deployment_id, f"SUCCESS: File deployment completed successfully (initiated by {logged_in_user})")
             deployments[deployment_id]["status"] = "success"
-            logger.info(f"File deployment {deployment_id} completed successfully")
+            logger.info(f"File deployment {deployment_id} completed successfully (initiated by {logged_in_user})")
         else:
-            log_message(deployment_id, "ERROR: File deployment failed")
+            log_message(deployment_id, f"ERROR: File deployment failed (initiated by {logged_in_user})")
             deployments[deployment_id]["status"] = "failed"
-            logger.error(f"File deployment {deployment_id} failed with return code {process.returncode}")
+            logger.error(f"File deployment {deployment_id} failed with return code {process.returncode} (initiated by {logged_in_user})")
         
         # Clean up temporary files
         try:
@@ -643,6 +657,240 @@ def process_file_deployment(deployment_id):
         deployments[deployment_id]["status"] = "failed"
         logger.exception(f"Exception in file deployment {deployment_id}: {str(e)}")
         save_deployment_history()
+
+
+# # API to deploy a file
+# @app.route('/api/deploy/file', methods=['POST'])
+# def deploy_file():
+#     data = request.json
+#     ft = data.get('ft')
+#     file_name = data.get('file')
+#     user = data.get('user')
+#     target_path = data.get('targetPath')
+#     vms = data.get('vms')
+#     sudo = data.get('sudo', False)
+#     create_backup = data.get('createBackup', True)  # Default to true for safety
+    
+#     logger.info(f"File deployment request received: {file_name} from FT {ft} to {len(vms)} VMs")
+    
+#     if not all([ft, file_name, user, target_path, vms]):
+#         logger.error("Missing required parameters for file deployment")
+#         return jsonify({"error": "Missing required parameters"}), 400
+    
+#     # Generate a unique deployment ID
+#     deployment_id = str(uuid.uuid4())
+    
+#     # Store deployment information
+#     deployments[deployment_id] = {
+#         "id": deployment_id,
+#         "type": "file",
+#         "ft": ft,
+#         "file": file_name,
+#         "user": user,
+#         "target_path": target_path,
+#         "vms": vms,
+#         "sudo": sudo,
+#         "create_backup": create_backup,
+#         "status": "running",
+#         "timestamp": time.time(),
+#         "logs": []
+#     }
+    
+#     # Save deployment history
+#     save_deployment_history()
+    
+#     # Start deployment in a separate thread
+#     threading.Thread(target=process_file_deployment, args=(deployment_id,)).start()
+    
+#     logger.info(f"File deployment initiated with ID: {deployment_id}")
+#     return jsonify({"deploymentId": deployment_id})
+
+# def process_file_deployment(deployment_id):
+#     deployment = deployments[deployment_id]
+    
+#     try:
+#         ft = deployment["ft"]
+#         file_name = deployment["file"]
+#         user = deployment["user"]
+#         target_path = deployment["target_path"]
+#         vms = deployment["vms"]
+#         sudo = deployment["sudo"]
+#         create_backup = deployment.get("create_backup", True)
+        
+#         source_file = os.path.join(FIX_FILES_DIR, 'AllFts', ft, file_name)
+#         logger.info(f"Processing file deployment from {source_file}")
+
+#         # Add debug logging to see actual values
+#         log_message(deployment_id, f"DEBUG: target_path = {target_path}")
+#         log_message(deployment_id, f"DEBUG: file_name = {file_name}")
+#         log_message(deployment_id, f"DEBUG: user = {user}")
+#         log_message(deployment_id, f"DEBUG: sudo = {sudo}")
+        
+#         if not os.path.exists(source_file):
+#             error_msg = f"Source file not found: {source_file}"
+#             log_message(deployment_id, f"ERROR: {error_msg}")
+#             deployments[deployment_id]["status"] = "failed"
+#             logger.error(error_msg)
+#             save_deployment_history()
+#             return
+        
+#         log_message(deployment_id, f"Starting file deployment for {file_name} to {len(vms)} VMs")
+        
+#         # Generate an ansible playbook for file deployment
+#         playbook_file = f"/tmp/file_deploy_{deployment_id}.yml"
+        
+#         # Create a more robust playbook that creates target directory if needed
+#         final_target_path = os.path.join(target_path, file_name)
+#         target_dir = os.path.dirname(final_target_path)
+        
+#         with open(playbook_file, 'w') as f:
+#             f.write(f"""---
+# - name: Deploy file to VMs
+#   hosts: deployment_targets
+#   gather_facts: false
+#   become: {"true" if sudo else "false"}
+#   become_method: sudo
+#   become_user: {user}
+#   tasks:
+#     # First test SSH connection to ensure it works
+#     - name: Test connection
+#       ansible.builtin.ping:
+#       register: ping_result
+      
+#     # Create the full target directory path if it does not exist
+#     - name: Create target directory structure if it does not exist
+#       ansible.builtin.file:
+#         path: "{target_path}"
+#         state: directory
+#         mode: '0755'
+#       become: {"true" if sudo else "false"}
+#       become_user: {user}
+      
+#     # Check if file exists first to support backup
+#     - name: Check if file already exists
+#       ansible.builtin.stat:
+#         path: "{final_target_path}"
+#       register: file_stat
+      
+#     # Create backup of existing file if requested
+#     - name: Create backup of existing file if it exists
+#       ansible.builtin.copy:
+#         src: "{final_target_path}"
+#         dest: "{final_target_path}.bak.{{ ansible_date_time.epoch }}"
+#         remote_src: yes
+#       when: file_stat.stat.exists and {str(create_backup).lower()}
+#       register: backup_result
+      
+#     # Log backup creation
+#     - name: Log backup result
+#       ansible.builtin.debug:
+#         msg: "Created backup at {{ backup_result.dest }}"
+#       when: backup_result.changed is defined and backup_result.changed
+      
+#     # Copy the file to the target location
+#     - name: Copy file to target VMs
+#       ansible.builtin.copy:
+#         src: "{source_file}"
+#         dest: "{final_target_path}"
+#         mode: '0644'
+#         owner: "{user}"
+#       register: copy_result
+      
+#     - name: Log copy result
+#       ansible.builtin.debug:
+#         msg: "File copied successfully to {{ inventory_hostname }}"
+#       when: copy_result.changed
+# """)
+#         logger.debug(f"Created Ansible playbook: {playbook_file}")
+        
+#         # Generate inventory file for ansible
+#         inventory_file = f"/tmp/inventory_{deployment_id}"
+        
+#         with open(inventory_file, 'w') as f:
+#             f.write("[deployment_targets]\n")
+#             for vm_name in vms:
+#                 # Find VM IP from inventory
+#                 vm = next((v for v in inventory["vms"] if v["name"] == vm_name), None)
+#                 if vm:
+#                     # Add ansible_ssh_common_args to disable StrictHostKeyChecking for this connection
+#                     f.write(f"{vm_name} ansible_host={vm['ip']} ansible_user=infadm ansible_ssh_private_key_file=/home/users/infadm/.ssh/id_rsa ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ControlMaster=auto -o ControlPath=/tmp/ansible-ssh/%h-%p-%r -o ControlPersist=60s'\n")
+        
+#         logger.debug(f"Created Ansible inventory: {inventory_file}")
+#         log_message(deployment_id, f"Created inventory file with targets: {', '.join(vms)}")
+        
+#         # Test SSH connection to each target VM
+#         for vm_name in vms:
+#             vm = next((v for v in inventory["vms"] if v["name"] == vm_name), None)
+#             if vm:
+#                 log_message(deployment_id, f"Testing SSH connection to {vm_name} ({vm['ip']})")
+#                 cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", 
+#                       "-i", "/home/users/infadm/.ssh/id_rsa", f"infadm@{vm['ip']}", "echo 'SSH Connection Test'"]
+                
+#                 try:
+#                     result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+#                     if result.returncode == 0:
+#                         log_message(deployment_id, f"SSH connection to {vm_name} successful")
+#                     else:
+#                         log_message(deployment_id, f"SSH connection to {vm_name} failed: {result.stderr.strip()}")
+#                 except Exception as e:
+#                     log_message(deployment_id, f"SSH connection test error: {str(e)}")
+        
+#         # Create ssh control directory to avoid "cannot bind to path" errors
+#         os.makedirs('/tmp/ansible-ssh', exist_ok=True)
+#         # os.chmod('/tmp/ansible-ssh', 0o777)
+#         try:
+#             os.chmod('/tmp/ansible-ssh', 0o777)  # Set proper permissions for ansible control path
+#         except PermissionError:
+#             logger.info("Could not set permissions on /tmp/ansible-ssh - continuing with existing permissions")
+#         log_message(deployment_id, "Ensured ansible control path directory exists with permissions 777")
+        
+#         # Run ansible playbook
+#         env_vars = os.environ.copy()
+#         env_vars["ANSIBLE_CONFIG"] = "/etc/ansible/ansible.cfg"
+#         env_vars["ANSIBLE_HOST_KEY_CHECKING"] = "False"
+#         env_vars["ANSIBLE_SSH_CONTROL_PATH"] = "/tmp/ansible-ssh/%h-%p-%r"
+#         env_vars["ANSIBLE_SSH_CONTROL_PATH_DIR"] = "/tmp/ansible-ssh"
+        
+#         cmd = ["ansible-playbook", "-i", inventory_file, playbook_file, "-vvv"]
+        
+#         log_message(deployment_id, f"Executing: {' '.join(cmd)}")
+#         logger.info(f"Executing Ansible command: {' '.join(cmd)}")
+        
+#         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env_vars)
+        
+#         for line in process.stdout:
+#             line_stripped = line.strip()
+#             log_message(deployment_id, line_stripped)
+#             # Also log to main application log
+#             logger.debug(f"[{deployment_id}] {line_stripped}")
+        
+#         process.wait()
+        
+#         if process.returncode == 0:
+#             log_message(deployment_id, "SUCCESS: File deployment completed successfully")
+#             deployments[deployment_id]["status"] = "success"
+#             logger.info(f"File deployment {deployment_id} completed successfully")
+#         else:
+#             log_message(deployment_id, "ERROR: File deployment failed")
+#             deployments[deployment_id]["status"] = "failed"
+#             logger.error(f"File deployment {deployment_id} failed with return code {process.returncode}")
+        
+#         # Clean up temporary files
+#         try:
+#             os.remove(playbook_file)
+#             os.remove(inventory_file)
+#             logger.debug(f"Cleaned up temporary files for deployment {deployment_id}")
+#         except Exception as e:
+#             logger.warning(f"Error cleaning up temporary files: {str(e)}")
+        
+#         # Save deployment history after completion
+#         save_deployment_history()
+        
+#     except Exception as e:
+#         log_message(deployment_id, f"ERROR: Exception during file deployment: {str(e)}")
+#         deployments[deployment_id]["status"] = "failed"
+#         logger.exception(f"Exception in file deployment {deployment_id}: {str(e)}")
+#         save_deployment_history()
 
 # # API to validate file deployment
 

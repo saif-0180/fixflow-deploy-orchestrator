@@ -10,7 +10,7 @@ auth_bp = Blueprint('auth', __name__)
 
 # Configuration
 SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'your-secret-key-change-this-in-production')
-USERS_FILE = '/app/users.json'
+USERS_FILE = '/app/users/users.json'
 
 def hash_password(password):
     """Hash password using SHA-256"""
@@ -59,6 +59,46 @@ def verify_token(token):
         return None
     except jwt.InvalidTokenError:
         return None
+
+# def token_required(f):
+#     """Decorator to require valid token"""
+#     @wraps(f)
+#     def decorated(*args, **kwargs):
+#         auth_header = request.headers.get('Authorization')
+#         if not auth_header or not auth_header.startswith('Bearer '):
+#             return jsonify({'error': 'No token provided'}), 401
+        
+#         token = auth_header.split(' ')[1]
+#         payload = verify_token(token)
+        
+#         if not payload:
+#             return jsonify({'error': 'Invalid token'}), 401
+        
+#         # Store user info in Flask's g object for use in other routes
+#         g.current_user = {
+#             'username': payload['username'],
+#             'role': payload['role']
+#         }
+        
+#         return f(*args, **kwargs)
+#     return decorated
+
+def get_current_user():
+    """Get current authenticated user"""
+    auth_header = request.headers.get('Authorization')
+    if not auth_header or not auth_header.startswith('Bearer '):
+        return None
+    
+    token = auth_header.split(' ')[1]
+    payload = verify_token(token)
+    
+    if not payload:
+        return None
+    
+    return {
+        'username': payload['username'],
+        'role': payload['role']
+    }
 
 @auth_bp.route('/api/auth/login', methods=['POST'])
 def login():

@@ -16,6 +16,7 @@ import {
 import { RefreshCcw } from 'lucide-react';
 import LogDisplay from '@/components/LogDisplay';
 import VMSelector from '@/components/VMSelector';
+import { useAuth } from '@/contexts/AuthContext';
 
 const FileOperations: React.FC = () => {
   const { toast } = useToast();
@@ -30,7 +31,7 @@ const FileOperations: React.FC = () => {
   const [deploymentId, setDeploymentId] = useState<string | null>(null);
   const [validateUseSudo, setValidateUseSudo] = useState<boolean>(false);
   const [fileOperationStatus, setFileOperationStatus] = useState<'idle' | 'loading' | 'running' | 'success' | 'failed' | 'completed'>('idle');
-  
+  const { user } = useAuth();
   // Shell command options
   const [shellCommand, setShellCommand] = useState<string>("");
   const [shellSelectedVMs, setShellSelectedVMs] = useState<string[]>([]);
@@ -149,24 +150,52 @@ const FileOperations: React.FC = () => {
   }, [recentFileDeployments]);
 
   // Deploy mutation
+
   const deployMutation = useMutation({
-    mutationFn: async () => {
-      setFileOperationStatus('loading');
-      const response = await fetch('/api/deploy/file', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          ft: selectedFt,
-          file: selectedFile,
-          user: selectedUser,
-          targetPath,
-          vms: selectedVMs,
-          sudo: useSudo,
-          createBackup: createBackup,
-        }),
-      });
+  mutationFn: async () => {
+    setFileOperationStatus('loading');
+    
+    // Get the token from localStorage
+    const token = localStorage.getItem('authToken');
+    
+    if (!token) {
+      throw new Error('No authentication token found. Please log in.');
+    }
+    
+    const response = await fetch('/api/deploy/file', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        ft: selectedFt,
+        file: selectedFile,
+        user: selectedUser,
+        targetPath,
+        vms: selectedVMs,
+        sudo: useSudo,
+        createBackup: createBackup,
+      }),
+    });
+  // const deployMutation = useMutation({
+  //   mutationFn: async () => {
+  //     setFileOperationStatus('loading');
+  //     const response = await fetch('/api/deploy/file', {
+  //       method: 'POST',
+  //       headers: {
+  //         'Content-Type': 'application/json',
+  //       },
+  //       body: JSON.stringify({
+  //         ft: selectedFt,
+  //         file: selectedFile,
+  //         user: selectedUser,
+  //         targetPath,
+  //         vms: selectedVMs,
+  //         sudo: useSudo,
+  //         createBackup: createBackup,
+  //       }),
+  //     });
       
       if (!response.ok) {
         const errorText = await response.text();
