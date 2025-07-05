@@ -235,13 +235,6 @@ const FileOperations: React.FC = () => {
   const rollbackMutation = useMutation({
     mutationFn: async (deploymentId: string) => {
       setFileOperationStatus('loading');
-
-      // Get the token from localStorage
-      const token = localStorage.getItem('authToken');
-      
-      if (!token) {
-        throw new Error('No authentication token found. Please log in.');
-      }
       const response = await fetch(`/api/deploy/${deploymentId}/rollback`, {
         method: 'POST',
         headers: {
