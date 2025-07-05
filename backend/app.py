@@ -564,7 +564,7 @@ def process_file_deployment(deployment_id):
       
     - name: Log copy result
       ansible.builtin.debug:
-        msg: "File copied successfully to { inventory_hostname } {vms} (deployment by {logged_in_user})"
+        msg: "File copied successfully to {vms} (deployment by {logged_in_user})"
       when: copy_result.changed
 """)
         logger.debug(f"Created Ansible playbook: {playbook_file}")
@@ -2468,6 +2468,11 @@ def get_current_timestamp():
 
 @app.route('/api/systemd/<operation>', methods=['POST'])
 def systemd_operation(operation):
+    # Get current authenticated user
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({"error": "Authentication required"}), 401
+
     data = request.json
     operation = data.get('operation', operation).strip().lower()  # Use URL param or body param
     service = data.get('service')
@@ -2490,6 +2495,8 @@ def systemd_operation(operation):
         "type": "systemd",
         "service": service,
         "operation": operation,
+        "logged_in_user": current_user['username'],  # User who initiated the deployment
+        "user_role": current_user['role'],  # Role of the user who initiated
         "vms": vms,
         "status": "running",
         "timestamp": get_current_timestamp(),
@@ -2502,20 +2509,20 @@ def systemd_operation(operation):
     # Start systemd operation in a separate thread
     threading.Thread(target=process_systemd_operation, args=(deployment_id, operation, service, vms)).start()
     
-    logger.info(f"Systemd {operation} initiated with ID: {deployment_id}")
-    return jsonify({"deploymentId": deployment_id})
+    logger.info(f"Systemd {operation} initiated with ID: {deployment_id} initiated by {current_user['username']}")
+    return jsonify({"deploymentId": deployment_id}, "initiatedBy": current_user['username'])
 
 
 def process_systemd_operation(deployment_id, operation, service, vms):
     try:
-        log_message(deployment_id, f"Starting systemd {operation} for service '{service}' on {len(vms)} VMs")
+        log_message(deployment_id, f"Starting systemd {operation} for service '{service}' on {len(vms)} VMs (initiated by {logged_in_user})")
         
         # Generate an ansible playbook for systemd operation
         playbook_file = f"/tmp/systemd_{deployment_id}.yml"
         
         with open(playbook_file, 'w') as f:
             f.write(f"""---
-- name: Systemd {operation} operation for {service}
+- name: Systemd {operation} operation for {service} (initiated by {logged_in_user})
   hosts: systemd_targets
   gather_facts: true
 #   become: true
@@ -2730,13 +2737,13 @@ def process_systemd_operation(deployment_id, operation, service, vms):
         
         # Check result and update status
         if result.returncode == 0:
-            log_message(deployment_id, f"SUCCESS: Systemd {operation} operation completed successfully")
+            log_message(deployment_id, f"SUCCESS: Systemd {operation} operation completed successfully (initiated by {logged_in_user})")
             deployments[deployment_id]["status"] = "completed"
-            logger.info(f"Systemd operation {deployment_id} completed successfully")
+            logger.info(f"Systemd operation {deployment_id} completed successfully (initiated by {logged_in_user})")
         else:
-            log_message(deployment_id, f"ERROR: Systemd {operation} operation failed with return code {result.returncode}")
+            log_message(deployment_id, f"ERROR: Systemd {operation} operation failed with return code {result.returncode} (initiated by {logged_in_user})")
             deployments[deployment_id]["status"] = "failed"
-            logger.error(f"Systemd operation {deployment_id} failed with return code {result.returncode}")
+            logger.error(f"Systemd operation {deployment_id} failed with return code {result.returncode} (initiated by {logged_in_user})")
         
         # Clean up temporary files
         try:
