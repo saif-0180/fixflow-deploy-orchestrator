@@ -564,7 +564,7 @@ def process_file_deployment(deployment_id):
       
     - name: Log copy result
       ansible.builtin.debug:
-        msg: "File copied successfully to {{ inventory_hostname }} (deployment by {logged_in_user})"
+        msg: "File copied successfully to { inventory_hostname } {vms} (deployment by {logged_in_user})"
       when: copy_result.changed
 """)
         logger.debug(f"Created Ansible playbook: {playbook_file}")
@@ -1348,11 +1348,11 @@ def process_shell_command(deployment_id):
         process.wait()
         
         if process.returncode == 0:
-            log_message(deployment_id, "SUCCESS: Shell command executed successfully (initiated by {logged_in_user})")
+            log_message(deployment_id, f"SUCCESS: Shell command executed successfully (initiated by {logged_in_user})")
             deployments[deployment_id]["status"] = "success"
             logger.info(f"Shell command {deployment_id} completed successfully (initiated by {logged_in_user})")
         else:
-            log_message(deployment_id, "ERROR: Shell command execution failed (initiated by {logged_in_user})")
+            log_message(deployment_id, f"ERROR: Shell command execution failed (initiated by {logged_in_user})")
             deployments[deployment_id]["status"] = "failed"
             logger.error(f"Shell command {deployment_id} failed with return code {process.returncode} (initiated by {logged_in_user})")
         
