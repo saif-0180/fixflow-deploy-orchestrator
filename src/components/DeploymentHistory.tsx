@@ -444,13 +444,6 @@ const DeploymentHistory: React.FC = () => {
           {selectedDeploymentId && getSelectedDeployment()?.type === 'file' && 
            getSelectedDeployment()?.status === 'success' && (
             <div className="flex justify-end">
-              <Button 
-                onClick={() => selectedDeploymentId && handleRollback(selectedDeploymentId)}
-                disabled={rollbackMutation.isPending}
-                className="bg-[#2A4759] text-white hover:bg-[#2A4759]/80"
-              >
-                {rollbackMutation.isPending ? "Rolling Back..." : "Rollback Deployment"}
-              </Button>
             </div>
           )}
         </div>

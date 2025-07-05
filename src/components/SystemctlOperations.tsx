@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import VMSelector from './VMSelector';
 import LogDisplay from './LogDisplay';
 import { useQuery } from '@tanstack/react-query';
+import { useAuth } from '@/contexts/AuthContext';
 
 const SystemctlOperations = () => {
   const { toast } = useToast();
@@ -17,6 +18,7 @@ const SystemctlOperations = () => {
   const [logs, setLogs] = useState<string[]>([]);
   const [deploymentId, setDeploymentId] = useState<string | null>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'running' | 'success' | 'failed' | 'timeout'>('idle');
+  const { user } = useAuth();
   
   // Use ref to store cleanup function
   const pollCleanupRef = useRef<(() => void) | null>(null);
@@ -255,6 +257,13 @@ const SystemctlOperations = () => {
   // Execute systemctl operation
   const systemctlMutation = useMutation({
     mutationFn: async () => {
+
+      // Get the token from localStorage
+      const token = localStorage.getItem('authToken');
+      
+      if (!token) {
+        throw new Error('No authentication token found. Please log in.');
+      }
       if (!selectedService || selectedVMs.length === 0) {
         throw new Error('Please select a service and at least one VM');
       }
@@ -263,6 +272,7 @@ const SystemctlOperations = () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({
           service: selectedService,

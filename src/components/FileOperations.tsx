@@ -43,8 +43,8 @@ const FileOperations: React.FC = () => {
   const [shellLogs, setShellLogs] = useState<string[]>([]);
   const [shellOperationStatus, setShellOperationStatus] = useState<'idle' | 'loading' | 'running' | 'success' | 'failed' | 'completed'>('idle');
   const [userHomes] = useState<{[key: string]: string}>({
-    'infadm': '/home/infadm',
-    'abpwrk1': '/home/abpwrk1',
+    'infadm': '/home/users/infadm',
+    'abpwrk1': '/home/users/abpwrk1',
     'root': '/root'
   });
 

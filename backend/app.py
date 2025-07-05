@@ -2033,7 +2033,7 @@ def process_rollback(rollback_id):
     try:
         original_id = rollback["original_deployment"]
         vms = rollback["vms"]
-        logged_in_user = deployment["logged_in_user"]  # User who initiated
+        logged_in_user = rollback["logged_in_user"]  # User who initiated
         target_path = os.path.join(rollback["target_path"], rollback["file"])
         user = rollback["user"]
         sudo = rollback["sudo"]
@@ -2147,17 +2147,17 @@ def process_rollback(rollback_id):
         if overall_success:
             deployments[rollback_id]["status"] = "success"
             deployments[rollback_id]["backup_timestamp"] = timestamp
-            log_message(rollback_id, f"Rollback operation completed successfully on all VMs. Files backed up with timestamp: {timestamp}")
+            log_message(rollback_id, f"Rollback operation completed successfully on all VMs(initiated by {logged_in_user}) . Files backed up with timestamp: {timestamp}")
         else:
             deployments[rollback_id]["status"] = "failed"
             if failed_vms:
-                log_message(rollback_id, f"Rollback FAILED on VMs: {', '.join(failed_vms)}")
+                log_message(rollback_id, f"Rollback FAILED on VMs: {', '.join(failed_vms)} (initiated by {logged_in_user})")
             log_message(rollback_id, "Rollback operation completed with failures")
         
         save_deployment_history()
         
     except Exception as e:
-        log_message(rollback_id, f"ERROR: Exception during rollback: {str(e)}")
+        log_message(rollback_id, f"ERROR: Exception during rollback: {str(e)} (initiated by {logged_in_user})")
         deployments[rollback_id]["status"] = "failed"
         logger.exception(f"Exception in rollback {rollback_id}: {str(e)}")
         save_deployment_history()
