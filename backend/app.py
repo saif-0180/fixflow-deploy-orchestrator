@@ -1183,6 +1183,11 @@ def validate_deployment(deployment_id):
 # API to run shell command
 @app.route('/api/command/shell', methods=['POST'])
 def run_shell_command():
+    # Get current authenticated user
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({"error": "Authentication required"}), 401
+
     data = request.json
     command = data.get('command')
     vms = data.get('vms')
@@ -1205,6 +1210,8 @@ def run_shell_command():
         "type": "command",
         "command": command,
         "vms": vms,
+        "logged_in_user": current_user['username'],  # User who initiated the deployment
+        "user_role": current_user['role'],  # Role of the user who initiated
         "sudo": sudo,
         "user": user,
         "working_dir": working_dir,
@@ -1230,6 +1237,7 @@ def process_shell_command(deployment_id):
         command = deployment["command"]
         vms = deployment["vms"]
         sudo = deployment["sudo"]
+        logged_in_user = deployment["logged_in_user"]  # User who initiated
         user = deployment.get("user", "infadm")
         working_dir = deployment.get("working_dir", "")
         
@@ -1969,6 +1977,11 @@ def get_command_logs(command_id):
 @app.route('/api/deploy/<deployment_id>/rollback', methods=['POST'])
 def rollback_deployment(deployment_id):
     logger.info(f"Rolling back deployment with ID: {deployment_id}")
+
+    # Get current authenticated user
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({"error": "Authentication required"}), 401 
     
     if deployment_id not in deployments:
         logger.error(f"Deployment not found with ID: {deployment_id}")
@@ -1991,6 +2004,8 @@ def rollback_deployment(deployment_id):
         "ft": deployment.get("ft"),
         "file": deployment.get("file"),
         "target_path": deployment.get("target_path"),
+        "logged_in_user": current_user['username'],  # User who initiated the deployment
+        "user_role": current_user['role'],  # Role of the user who initiated
         "vms": deployment.get("vms"),
         "user": deployment.get("user"),
         "sudo": deployment.get("sudo", False),
@@ -2014,6 +2029,7 @@ def process_rollback(rollback_id):
     try:
         original_id = rollback["original_deployment"]
         vms = rollback["vms"]
+        logged_in_user = deployment["logged_in_user"]  # User who initiated
         target_path = os.path.join(rollback["target_path"], rollback["file"])
         user = rollback["user"]
         sudo = rollback["sudo"]

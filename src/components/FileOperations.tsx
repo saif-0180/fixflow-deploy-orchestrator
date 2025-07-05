@@ -235,10 +235,18 @@ const FileOperations: React.FC = () => {
   const rollbackMutation = useMutation({
     mutationFn: async (deploymentId: string) => {
       setFileOperationStatus('loading');
+      // Get the token from localStorage
+      const token = localStorage.getItem('authToken');
+      
+      if (!token) {
+        throw new Error('No authentication token found. Please log in.');
+      }
+
       const response = await fetch(`/api/deploy/${deploymentId}/rollback`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
         }
       });
       
@@ -336,6 +344,12 @@ const FileOperations: React.FC = () => {
   const shellCommandMutation = useMutation({
     mutationFn: async () => {
       setShellOperationStatus('loading');
+      // Get the token from localStorage
+      const token = localStorage.getItem('authToken');
+      
+      if (!token) {
+        throw new Error('No authentication token found. Please log in.');
+      }
       
       let workingDirectory = shellWorkingDir;
       
@@ -347,6 +361,7 @@ const FileOperations: React.FC = () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({
           command: shellCommand,

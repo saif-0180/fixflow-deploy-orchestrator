@@ -24,6 +24,7 @@ const SqlOperations = () => {
   const [logs, setLogs] = useState<string[]>([]);
   const [deploymentId, setDeploymentId] = useState<string | null>(null);
   const [logStatus, setLogStatus] = useState<'idle' | 'loading' | 'running' | 'success' | 'failed'>('idle');
+  const { user } = useAuth();
 
   // Fetch FTs
   const { data: fts = [], isLoading: isLoadingFTs } = useQuery({
@@ -56,6 +57,13 @@ const SqlOperations = () => {
   // Execute SQL mutation
   const executeSqlMutation = useMutation({
     mutationFn: async () => {
+
+      // Get the token from localStorage
+      const token = localStorage.getItem('authToken');
+      
+      if (!token) {
+        throw new Error('No authentication token found. Please log in.');
+      }
       if (!selectedFT || !selectedFile || !selectedHostname || !selectedPort || !selectedUser || !dbName) {
         throw new Error('Missing required fields');
       }
