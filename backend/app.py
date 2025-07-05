@@ -2514,7 +2514,9 @@ def systemd_operation(operation):
 
 
 def process_systemd_operation(deployment_id, operation, service, vms):
+    deployment = deployments[deployment_id]
     try:
+        logged_in_user = deployment["logged_in_user"]  # User who initiated
         log_message(deployment_id, f"Starting systemd {operation} for service '{service}' on {len(vms)} VMs (initiated by {logged_in_user})")
         
         # Generate an ansible playbook for systemd operation
