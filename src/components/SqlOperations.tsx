@@ -24,7 +24,6 @@ const SqlOperations = () => {
   const [logs, setLogs] = useState<string[]>([]);
   const [deploymentId, setDeploymentId] = useState<string | null>(null);
   const [logStatus, setLogStatus] = useState<'idle' | 'loading' | 'running' | 'success' | 'failed'>('idle');
-  const { user } = useAuth();
 
   // Fetch FTs
   const { data: fts = [], isLoading: isLoadingFTs } = useQuery({
