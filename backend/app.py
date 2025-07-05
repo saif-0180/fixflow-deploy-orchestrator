@@ -2510,7 +2510,7 @@ def systemd_operation(operation):
     threading.Thread(target=process_systemd_operation, args=(deployment_id, operation, service, vms)).start()
     
     logger.info(f"Systemd {operation} initiated with ID: {deployment_id} initiated by {current_user['username']}")
-    return jsonify({"deploymentId": deployment_id}, "initiatedBy": current_user['username'])
+    return jsonify({"deploymentId": deployment_id, "initiatedBy": current_user['username']})
 
 
 def process_systemd_operation(deployment_id, operation, service, vms):
