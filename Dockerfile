@@ -1,13 +1,20 @@
 # Frontend Build Stage
-FROM node:18-alpine as frontend-build
+FROM node:18-alpine AS frontend-build
 WORKDIR /app
 COPY package*.json ./
-RUN npm install
+RUN npm install && npm install -g vite
+#RUN npm config set strict-ssl false && \
+#    npm config set registry https://registry.npmjs.org/ && \
+#    npm install --no-optional --no-audit --no-fund
+#RUN npm config set strict-ssl false && \
+#    npm install -g vite
 COPY . .
-RUN npm run build
+#RUN npm config set strict-ssl false && \
+#    npx vite build
+RUN vite build
 
 # Backend Build Stage
-FROM python:3.10-slim as backend-build
+FROM python:3.10-slim AS backend-build
 WORKDIR /app/backend
 COPY backend/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
@@ -37,7 +44,7 @@ COPY --from=backend-build /usr/local/lib/python3.10/site-packages /usr/local/lib
 COPY backend /app/backend
 
 # Install ansible, SSH dependencies, and PostgreSQL client
-RUN apt-get update && \
+RUN apt-get update -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false && \
     apt-get install -y \
         ansible \
         openssh-client \
