@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -35,7 +34,7 @@ const DeploymentHistory: React.FC = () => {
   const [deploymentLogs, setDeploymentLogs] = useState<string[]>([]);
   const [clearDays, setClearDays] = useState<number>(30);
   const [logStatus, setLogStatus] = useState<'idle' | 'loading' | 'running' | 'success' | 'failed' | 'completed'>('idle');
-  const [lastRefreshedTime, setLastRefreshedTime] = useState<string>(new Date().toLocaleTimeString());
+  const [lastRefreshedTime, setLastRefreshedTime] = useState<string>('');
   const [apiErrorMessage, setApiErrorMessage] = useState<string>("");
 
   // Fetch deployment history with manual refetch
@@ -225,11 +224,11 @@ const DeploymentHistory: React.FC = () => {
     }
   }, [deployments, selectedDeploymentId, isLoadingDeployments]);
 
-  // Format deployment summary for display with username at the beginning
+  // Format deployment summary for display with username at the beginning and proper GMT time
   const formatDeploymentSummary = (deployment: Deployment): string => {
-    // Convert timestamp to readable format using timezone utility
+    // Convert timestamp to GMT format
     const dateTime = deployment.timestamp ? 
-      toLocaleStringWithTimezone(deployment.timestamp) :
+      toLocaleStringWithTimezone(deployment.timestamp, 'Europe/London') + ' GMT' :
       'Unknown date';
 
     // ALWAYS show user prefix for ALL deployment types
@@ -272,7 +271,7 @@ const DeploymentHistory: React.FC = () => {
     }
   };
 
-  // Get deployment details with logged in user info prominently displayed
+  // Get deployment details with logged in user info prominently displayed and GMT time
   const getDeploymentDetailsText = (): string => {
     const deployment = getSelectedDeployment();
     if (!deployment) return "Select a deployment to view details";
@@ -309,7 +308,7 @@ const DeploymentHistory: React.FC = () => {
     }
     
     details += `Status: ${deployment.status}\n`;
-    details += `Timestamp: ${deployment.timestamp ? toLocaleStringWithTimezone(deployment.timestamp) : 'N/A'}`;
+    details += `Timestamp: ${deployment.timestamp ? toLocaleStringWithTimezone(deployment.timestamp, 'Europe/London') + ' GMT' : 'N/A'}`;
     
     return details;
   };
@@ -320,7 +319,7 @@ const DeploymentHistory: React.FC = () => {
     return deployments.find(d => d.id === selectedDeploymentId);
   };
 
-  // Safe access to deployment summary with logged-in user in title
+  // Safe access to deployment summary with logged-in user in title and GMT time
   const getDeploymentSummary = (): string => {
     const deployment = getSelectedDeployment();
     if (!deployment) return "Select a deployment to view details";
@@ -336,11 +335,18 @@ const DeploymentHistory: React.FC = () => {
     
     const statusInfo = `Status=${deployment.status}`;
     const dateTime = deployment.timestamp ? 
-      toLocaleStringWithTimezone(deployment.timestamp) : 
+      toLocaleStringWithTimezone(deployment.timestamp, 'Europe/London') + ' GMT' : 
       'Unknown date';
     
     return `${userInfo}${typeInfo}, ${statusInfo}, ${dateTime}`;
   };
+
+  // Update lastRefreshedTime to use GMT
+  useEffect(() => {
+    if (deployments.length > 0) {
+      setLastRefreshedTime(getCurrentTimeInTimezone('h:mm:ss a', 'Europe/London') + ' GMT');
+    }
+  }, [deployments]);
 
   const displayDeployments = deployments;
 

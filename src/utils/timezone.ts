@@ -14,10 +14,28 @@ export const formatToTimezone = (
   timezone: string = DEFAULT_TIMEZONE
 ): string => {
   try {
-    const dateObj = typeof date === 'string' || typeof date === 'number' ? new Date(date) : date;
+    let dateObj: Date;
+    
+    if (typeof date === 'string') {
+      // Handle string dates - assume they are UTC if no timezone info
+      dateObj = new Date(date);
+    } else if (typeof date === 'number') {
+      // Handle timestamp
+      dateObj = new Date(date);
+    } else {
+      // Already a Date object
+      dateObj = date;
+    }
+    
+    // Ensure we have a valid date
+    if (isNaN(dateObj.getTime())) {
+      console.error('Invalid date provided:', date);
+      return 'Invalid Date';
+    }
+    
     return formatInTimeZone(dateObj, timezone, formatString);
   } catch (error) {
-    console.error('Error formatting date to timezone:', error);
+    console.error('Error formatting date to timezone:', error, 'Date:', date);
     return 'Invalid Date';
   }
 };
@@ -35,7 +53,7 @@ export const getCurrentTimeInTimezone = (
 };
 
 /**
- * Convert timestamp to localized string for display
+ * Convert timestamp to localized string for display in GMT
  * @param timestamp - Timestamp to convert
  * @param timezone - Timezone to use
  */
@@ -43,19 +61,41 @@ export const formatTimestampForDisplay = (
   timestamp: string | Date,
   timezone: string = DEFAULT_TIMEZONE
 ): string => {
+  // Use a more standard format: M/d/yyyy, h:mm:ss a
   return formatToTimezone(timestamp, 'M/d/yyyy, h:mm:ss a', timezone);
 };
 
 /**
- * Convert timestamp to locale string (same as toLocaleString but with timezone)
- * @param timestamp - Timestamp to convert
+ * Convert timestamp to locale string with proper GMT timezone handling
+ * @param timestamp - Timestamp to convert  
  * @param timezone - Timezone to use
  */
 export const toLocaleStringWithTimezone = (
   timestamp: string | Date,
   timezone: string = DEFAULT_TIMEZONE
 ): string => {
-  return formatToTimezone(timestamp, 'M/d/yyyy, h:mm:ss a', timezone);
+  try {
+    let dateObj: Date;
+    
+    if (typeof timestamp === 'string') {
+      // Parse the string date
+      dateObj = new Date(timestamp);
+    } else {
+      dateObj = timestamp;
+    }
+    
+    // Ensure valid date
+    if (isNaN(dateObj.getTime())) {
+      console.error('Invalid timestamp:', timestamp);
+      return 'Invalid Date';
+    }
+    
+    // Format to GMT timezone
+    return formatInTimeZone(dateObj, timezone, 'M/d/yyyy, h:mm:ss a');
+  } catch (error) {
+    console.error('Error converting timestamp:', error, 'Timestamp:', timestamp);
+    return 'Invalid Date';
+  }
 };
 
 // Export available timezones for reference

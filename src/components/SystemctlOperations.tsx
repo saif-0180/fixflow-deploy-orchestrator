@@ -228,7 +228,7 @@ const SystemctlOperations = () => {
           <form onSubmit={handleSubmit} className="space-y-4">
             <VMSelector
               selectedVMs={selectedVMs}
-              onVMSelectionChange={setSelectedVMs}
+              onSelectionChange={setSelectedVMs}
               availableVMs={vms}
               isLoading={isLoadingVMs}
             />
