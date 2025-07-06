@@ -1,17 +1,6 @@
 
-import { format, formatInTimeZone } from 'date-fns-tz';
-
-// Default timezone - can be changed as per requirement
-export const DEFAULT_TIMEZONE = 'Europe/London';
-
-// Alternative timezones you might want to use
-export const TIMEZONES = {
-  LONDON: 'Europe/London',
-  UTC: 'UTC',
-  NEW_YORK: 'America/New_York',
-  TOKYO: 'Asia/Tokyo',
-  SYDNEY: 'Australia/Sydney',
-} as const;
+import { formatInTimeZone } from 'date-fns-tz';
+import { DEFAULT_TIMEZONE, TIMEZONE_CONFIG } from '@/config/timezone';
 
 /**
  * Format a date to the specified timezone
@@ -68,3 +57,7 @@ export const toLocaleStringWithTimezone = (
 ): string => {
   return formatToTimezone(timestamp, 'M/d/yyyy, h:mm:ss a', timezone);
 };
+
+// Export available timezones for reference
+export const AVAILABLE_TIMEZONES = TIMEZONE_CONFIG.AVAILABLE;
+export { DEFAULT_TIMEZONE };

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -226,9 +227,8 @@ const DeploymentHistory: React.FC = () => {
 
   // Format deployment summary for display with username at the beginning
   const formatDeploymentSummary = (deployment: Deployment): string => {
-    // Convert timestamp to readable format
+    // Convert timestamp to readable format using timezone utility
     const dateTime = deployment.timestamp ? 
-      // new Date(deployment.timestamp).toLocaleString() : 
       toLocaleStringWithTimezone(deployment.timestamp) :
       'Unknown date';
 
