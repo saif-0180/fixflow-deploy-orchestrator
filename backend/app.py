@@ -30,9 +30,6 @@ app.register_blueprint(db_routes)
 app.register_blueprint(auth_bp)
 #app.register_blueprint(db_routes)
 
-#GMT time converter
-logging.Formatter.converter = time.gmtime
-
 # Directory where fix files are stored
 FIX_FILES_DIR = os.environ.get('FIX_FILES_DIR', '/app/fixfiles')
 
@@ -187,7 +184,7 @@ def save_deployment_history():
         
         # Create a backup of the current history file if it exists
         if os.path.exists(DEPLOYMENT_HISTORY_FILE):
-            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S GMT')
+            timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
             backup_file = os.path.join(DEPLOYMENT_LOGS_DIR, f'deployment_history_{timestamp}.json')
             try:
                 with open(DEPLOYMENT_HISTORY_FILE, 'r') as src:
@@ -2520,6 +2517,7 @@ def process_systemd_operation(deployment_id, operation, service, vms):
     deployment = deployments[deployment_id]
     try:
         logged_in_user = deployment["logged_in_user"]  # User who initiated
+        user = deployment.get("user", "infadm")
         log_message(deployment_id, f"Starting systemd {operation} for service '{service}' on {len(vms)} VMs (initiated by {logged_in_user})")
         
         # Generate an ansible playbook for systemd operation
