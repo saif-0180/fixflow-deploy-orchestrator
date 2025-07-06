@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -226,9 +227,9 @@ const DeploymentHistory: React.FC = () => {
 
   // Format deployment summary for display with username at the beginning and proper GMT time
   const formatDeploymentSummary = (deployment: Deployment): string => {
-    // Convert timestamp to GMT format
+    // Convert timestamp to actual GMT format
     const dateTime = deployment.timestamp ? 
-      toLocaleStringWithTimezone(deployment.timestamp, 'Europe/London') + ' GMT' :
+      toLocaleStringWithTimezone(deployment.timestamp) + ' GMT' :
       'Unknown date';
 
     // ALWAYS show user prefix for ALL deployment types
@@ -308,7 +309,7 @@ const DeploymentHistory: React.FC = () => {
     }
     
     details += `Status: ${deployment.status}\n`;
-    details += `Timestamp: ${deployment.timestamp ? toLocaleStringWithTimezone(deployment.timestamp, 'Europe/London') + ' GMT' : 'N/A'}`;
+    details += `Timestamp: ${deployment.timestamp ? toLocaleStringWithTimezone(deployment.timestamp) + ' GMT' : 'N/A'}`;
     
     return details;
   };
@@ -335,16 +336,16 @@ const DeploymentHistory: React.FC = () => {
     
     const statusInfo = `Status=${deployment.status}`;
     const dateTime = deployment.timestamp ? 
-      toLocaleStringWithTimezone(deployment.timestamp, 'Europe/London') + ' GMT' : 
+      toLocaleStringWithTimezone(deployment.timestamp) + ' GMT' : 
       'Unknown date';
     
     return `${userInfo}${typeInfo}, ${statusInfo}, ${dateTime}`;
   };
 
-  // Update lastRefreshedTime to use GMT
+  // Update lastRefreshedTime to show actual GMT
   useEffect(() => {
     if (deployments.length > 0) {
-      setLastRefreshedTime(getCurrentTimeInTimezone('h:mm:ss a', 'Europe/London') + ' GMT');
+      setLastRefreshedTime(getCurrentTimeInTimezone('h:mm:ss a', 'GMT') + ' GMT');
     }
   }, [deployments]);
 

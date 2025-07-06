@@ -229,7 +229,7 @@ const SystemctlOperations = () => {
             <VMSelector
               selectedVMs={selectedVMs}
               onSelectionChange={setSelectedVMs}
-              availableVMs={vms}
+              vms={vms}
               isLoading={isLoadingVMs}
             />
             
