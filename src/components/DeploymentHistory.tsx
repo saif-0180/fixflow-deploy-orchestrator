@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import LogDisplay from '@/components/LogDisplay';
 import { Loader2, RefreshCw } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { toLocaleStringWithTimezone, getCurrentTimeInTimezone } from '@/utils/timezone';
 
 interface Deployment {
   id: string;
@@ -67,7 +68,8 @@ const DeploymentHistory: React.FC = () => {
         
         const data = await response.json();
         console.log("Received deployment history data:", data);
-        setLastRefreshedTime(new Date().toLocaleTimeString());
+        // setLastRefreshedTime(new Date().toLocaleTimeString());
+        setLastRefreshedTime(getCurrentTimeInTimezone('h:mm:ss a'));
         return data as Deployment[];
       } catch (error) {
         console.error(`Error in history fetch: ${error}`);
@@ -226,7 +228,8 @@ const DeploymentHistory: React.FC = () => {
   const formatDeploymentSummary = (deployment: Deployment): string => {
     // Convert timestamp to readable format
     const dateTime = deployment.timestamp ? 
-      new Date(deployment.timestamp).toLocaleString() : 
+      // new Date(deployment.timestamp).toLocaleString() : 
+      toLocaleStringWithTimezone(deployment.timestamp) :
       'Unknown date';
 
     // ALWAYS show user prefix for ALL deployment types
@@ -306,7 +309,7 @@ const DeploymentHistory: React.FC = () => {
     }
     
     details += `Status: ${deployment.status}\n`;
-    details += `Timestamp: ${deployment.timestamp ? new Date(deployment.timestamp).toLocaleString() : 'N/A'}`;
+    details += `Timestamp: ${deployment.timestamp ? toLocaleStringWithTimezone(deployment.timestamp) : 'N/A'}`;
     
     return details;
   };
@@ -333,7 +336,7 @@ const DeploymentHistory: React.FC = () => {
     
     const statusInfo = `Status=${deployment.status}`;
     const dateTime = deployment.timestamp ? 
-      new Date(deployment.timestamp).toLocaleString() : 
+      toLocaleStringWithTimezone(deployment.timestamp) : 
       'Unknown date';
     
     return `${userInfo}${typeInfo}, ${statusInfo}, ${dateTime}`;
