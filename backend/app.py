@@ -30,6 +30,9 @@ app.register_blueprint(db_routes)
 app.register_blueprint(auth_bp)
 #app.register_blueprint(db_routes)
 
+#GMT time converter
+logging.Formatter.converter = time.gmtime
+
 # Directory where fix files are stored
 FIX_FILES_DIR = os.environ.get('FIX_FILES_DIR', '/app/fixfiles')
 
@@ -184,7 +187,7 @@ def save_deployment_history():
         
         # Create a backup of the current history file if it exists
         if os.path.exists(DEPLOYMENT_HISTORY_FILE):
-            timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S GMT')
             backup_file = os.path.join(DEPLOYMENT_LOGS_DIR, f'deployment_history_{timestamp}.json')
             try:
                 with open(DEPLOYMENT_HISTORY_FILE, 'r') as src:
