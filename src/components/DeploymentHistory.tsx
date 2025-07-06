@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -225,12 +224,16 @@ const DeploymentHistory: React.FC = () => {
     }
   }, [deployments, selectedDeploymentId, isLoadingDeployments]);
 
-  // Format deployment summary for display with username at the beginning and proper GMT time
+  // Format deployment summary for display with username at the beginning and proper UTC time
   const formatDeploymentSummary = (deployment: Deployment): string => {
-    // Convert timestamp to actual GMT format
+    // Convert timestamp to actual UTC format with better debugging
+    console.log('Raw timestamp:', deployment.timestamp);
+    
     const dateTime = deployment.timestamp ? 
       toLocaleStringWithTimezone(deployment.timestamp) + ' GMT' :
       'Unknown date';
+    
+    console.log('Formatted dateTime:', dateTime);
 
     // ALWAYS show user prefix for ALL deployment types
     const userPrefix = deployment.logged_in_user ? `User: ${deployment.logged_in_user} - ` : '';
@@ -272,7 +275,7 @@ const DeploymentHistory: React.FC = () => {
     }
   };
 
-  // Get deployment details with logged in user info prominently displayed and GMT time
+  // Get deployment details with logged in user info prominently displayed and UTC time
   const getDeploymentDetailsText = (): string => {
     const deployment = getSelectedDeployment();
     if (!deployment) return "Select a deployment to view details";
@@ -320,7 +323,7 @@ const DeploymentHistory: React.FC = () => {
     return deployments.find(d => d.id === selectedDeploymentId);
   };
 
-  // Safe access to deployment summary with logged-in user in title and GMT time
+  // Safe access to deployment summary with logged-in user in title and UTC time
   const getDeploymentSummary = (): string => {
     const deployment = getSelectedDeployment();
     if (!deployment) return "Select a deployment to view details";
@@ -342,10 +345,10 @@ const DeploymentHistory: React.FC = () => {
     return `${userInfo}${typeInfo}, ${statusInfo}, ${dateTime}`;
   };
 
-  // Update lastRefreshedTime to show actual GMT
+  // Update lastRefreshedTime to show actual UTC
   useEffect(() => {
     if (deployments.length > 0) {
-      setLastRefreshedTime(getCurrentTimeInTimezone('h:mm:ss a', 'GMT') + ' GMT');
+      setLastRefreshedTime(getCurrentTimeInTimezone('h:mm:ss a', 'UTC') + ' GMT');
     }
   }, [deployments]);
 

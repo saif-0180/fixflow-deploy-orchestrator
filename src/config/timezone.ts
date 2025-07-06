@@ -1,10 +1,11 @@
 
 // Timezone configuration - change DEFAULT_TIMEZONE to use different timezone globally
 export const TIMEZONE_CONFIG = {
-  DEFAULT: 'Europe/London',
+  DEFAULT: 'UTC',
   AVAILABLE: {
     LONDON: 'Europe/London',
     UTC: 'UTC',
+    GMT: 'GMT',
     NEW_YORK: 'America/New_York',
     TOKYO: 'Asia/Tokyo',
     SYDNEY: 'Australia/Sydney',

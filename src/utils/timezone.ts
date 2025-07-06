@@ -17,8 +17,8 @@ export const formatToTimezone = (
     let dateObj: Date;
     
     if (typeof date === 'string') {
-      // Handle string dates - assume they are UTC if no timezone info
-      dateObj = new Date(date);
+      // Handle string dates - parse as UTC
+      dateObj = new Date(date + 'Z');
     } else if (typeof date === 'number') {
       // Handle timestamp
       dateObj = new Date(date);
@@ -41,18 +41,19 @@ export const formatToTimezone = (
 };
 
 /**
- * Get current time in GMT
+ * Get current time in specified timezone
  * @param formatString - Format string
+ * @param timezone - Timezone to use
  */
 export const getCurrentTimeInTimezone = (
   formatString: string = 'yyyy-MM-dd HH:mm:ss',
-  timezone: string = 'GMT'
+  timezone: string = 'UTC'
 ): string => {
   return formatToTimezone(new Date(), formatString, timezone);
 };
 
 /**
- * Convert timestamp to GMT time for display
+ * Convert timestamp to UTC time for display
  * @param timestamp - Timestamp to convert
  */
 export const formatTimestampForDisplay = (
@@ -62,8 +63,9 @@ export const formatTimestampForDisplay = (
     let dateObj: Date;
     
     if (typeof timestamp === 'string') {
-      // Parse the string date and treat it as UTC
-      dateObj = new Date(timestamp + (timestamp.includes('Z') ? '' : 'Z'));
+      // Force UTC parsing by adding Z if not present
+      const utcTimestamp = timestamp.endsWith('Z') ? timestamp : timestamp + 'Z';
+      dateObj = new Date(utcTimestamp);
     } else {
       dateObj = timestamp;
     }
@@ -74,8 +76,8 @@ export const formatTimestampForDisplay = (
       return 'Invalid Date';
     }
     
-    // Format to GMT (UTC) timezone - this will show the actual GMT time
-    return formatInTimeZone(dateObj, 'GMT', 'M/d/yyyy, h:mm:ss a');
+    // Format to UTC timezone - this will show the actual UTC time
+    return formatInTimeZone(dateObj, 'UTC', 'M/d/yyyy, h:mm:ss a');
   } catch (error) {
     console.error('Error converting timestamp:', error, 'Timestamp:', timestamp);
     return 'Invalid Date';
@@ -83,7 +85,7 @@ export const formatTimestampForDisplay = (
 };
 
 /**
- * Convert timestamp to GMT time with explicit GMT timezone handling
+ * Convert timestamp to UTC time with explicit UTC timezone handling
  * @param timestamp - Timestamp to convert  
  */
 export const toLocaleStringWithTimezone = (
@@ -93,8 +95,9 @@ export const toLocaleStringWithTimezone = (
     let dateObj: Date;
     
     if (typeof timestamp === 'string') {
-      // Parse the string date and ensure it's treated as UTC if no timezone specified
-      dateObj = new Date(timestamp + (timestamp.includes('Z') ? '' : 'Z'));
+      // Force UTC parsing by adding Z if not present
+      const utcTimestamp = timestamp.endsWith('Z') ? timestamp : timestamp + 'Z';
+      dateObj = new Date(utcTimestamp);
     } else {
       dateObj = timestamp;
     }
@@ -105,8 +108,8 @@ export const toLocaleStringWithTimezone = (
       return 'Invalid Date';
     }
     
-    // Format to actual GMT (UTC) timezone
-    return formatInTimeZone(dateObj, 'GMT', 'M/d/yyyy, h:mm:ss a');
+    // Format to actual UTC timezone
+    return formatInTimeZone(dateObj, 'UTC', 'M/d/yyyy, h:mm:ss a');
   } catch (error) {
     console.error('Error converting timestamp:', error, 'Timestamp:', timestamp);
     return 'Invalid Date';
