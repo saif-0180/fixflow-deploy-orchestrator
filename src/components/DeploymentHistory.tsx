@@ -230,7 +230,7 @@ const DeploymentHistory: React.FC = () => {
     console.log('Raw timestamp:', deployment.timestamp);
     
     const dateTime = deployment.timestamp ? 
-      toLocaleStringWithTimezone(deployment.timestamp) + ' GMT' :
+      toLocaleStringWithTimezone(deployment.timestamp) :
       'Unknown date';
     
     console.log('Formatted dateTime:', dateTime);
