@@ -1042,6 +1042,7 @@ def get_deployment_history():
             try:
                 # Convert to ISO format for API response
                 # d["timestamp"] = time.strftime('%Y-%m-%dT%H:%M:%S', time.localtime(sort_timestamp))
+                # d["timestamp"] = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(sort_timestamp))
                 d["timestamp"] = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(sort_timestamp))
                 logger.debug(f"Final timestamp for deployment {i}: {d['timestamp']}")
             except Exception as e:
