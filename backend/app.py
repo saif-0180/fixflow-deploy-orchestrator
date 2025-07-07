@@ -149,7 +149,8 @@ def save_deployment_history():
         
         # Create a backup of the current history file if it exists
         if os.path.exists(DEPLOYMENT_HISTORY_FILE):
-            timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+            # timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+            timestamp = datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')
             backup_file = os.path.join(DEPLOYMENT_LOGS_DIR, f'deployment_history_{timestamp}.json')
             try:
                 with open(DEPLOYMENT_HISTORY_FILE, 'r') as src:
@@ -1108,7 +1109,7 @@ def get_recent_file_deployments():
                 else:
                     # Fallback for missing/invalid timestamps
                     deployment_copy = deployment.copy()
-                    deployment_copy["timestamp"] = datetime.now().isoformat()
+                    deployment_copy["timestamp"] = datetime.now(timezone.utc).isoformat()
                 
                 file_deployments.append(deployment_copy)
         
