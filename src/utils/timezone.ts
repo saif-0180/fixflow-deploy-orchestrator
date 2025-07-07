@@ -59,7 +59,7 @@ export const getCurrentTimeInTimezone = (
 };
 
 /**
- * Convert timestamp to UTC time for display with proper UTC handling
+ * Convert timestamp to GMT time for display with proper GMT timezone handling
  * @param timestamp - Timestamp to convert
  */
 export const formatTimestampForDisplay = (
@@ -83,8 +83,8 @@ export const formatTimestampForDisplay = (
       return 'Invalid Date';
     }
     
-    // Convert the UTC date to GMT timezone (which is same as UTC but with proper timezone handling)
-    const result = formatInTimeZone(dateObj, 'GMT', 'M/d/yyyy, h:mm:ss a');
+    // Convert the UTC date to GMT timezone with explicit GMT suffix
+    const result = formatInTimeZone(dateObj, 'GMT', 'M/d/yyyy, h:mm:ss a') + ' GMT';
     console.log('Final formatted result:', result);
     return result;
   } catch (error) {
@@ -94,7 +94,7 @@ export const formatTimestampForDisplay = (
 };
 
 /**
- * Convert timestamp to UTC time with explicit UTC timezone handling
+ * Convert timestamp to GMT time with explicit GMT timezone handling
  * @param timestamp - Timestamp to convert  
  */
 export const toLocaleStringWithTimezone = (
