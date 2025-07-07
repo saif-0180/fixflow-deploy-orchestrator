@@ -83,8 +83,11 @@ export const formatTimestampForDisplay = (
       return 'Invalid Date';
     }
     
-    // Convert the UTC date to GMT timezone with explicit GMT suffix
-    const result = formatInTimeZone(dateObj, 'GMT', 'M/d/yyyy, h:mm:ss a') + ' GMT';
+    // WORKAROUND: Add 1 hour to fix the timezone offset issue
+    const adjustedDate = new Date(dateObj.getTime() + (60 * 60 * 1000));
+    
+    // Convert the adjusted date to GMT timezone with explicit GMT suffix
+    const result = formatInTimeZone(adjustedDate, 'GMT', 'M/d/yyyy, h:mm:ss a') + ' GMT';
     console.log('Final formatted result:', result);
     return result;
   } catch (error) {
