@@ -348,7 +348,7 @@ const DeploymentHistory: React.FC = () => {
   // Update lastRefreshedTime to show actual UTC
   useEffect(() => {
     if (deployments.length > 0) {
-      setLastRefreshedTime(getCurrentTimeInTimezone('h:mm:ss a', 'UTC') + ' GMT');
+      setLastRefreshedTime(getCurrentTimeInTimezone('h:mm:ss a', 'UTC'));
     }
   }, [deployments]);
 
