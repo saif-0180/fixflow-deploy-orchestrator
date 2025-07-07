@@ -339,7 +339,7 @@ const DeploymentHistory: React.FC = () => {
     
     const statusInfo = `Status=${deployment.status}`;
     const dateTime = deployment.timestamp ? 
-      toLocaleStringWithTimezone(deployment.timestamp) + ' GMT' : 
+      toLocaleStringWithTimezone(deployment.timestamp) : 
       'Unknown date';
     
     return `${userInfo}${typeInfo}, ${statusInfo}, ${dateTime}`;
