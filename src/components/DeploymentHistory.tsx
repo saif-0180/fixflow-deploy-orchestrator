@@ -312,7 +312,7 @@ const DeploymentHistory: React.FC = () => {
     }
     
     details += `Status: ${deployment.status}\n`;
-    details += `Timestamp: ${deployment.timestamp ? toLocaleStringWithTimezone(deployment.timestamp) + ' GMT' : 'N/A'}`;
+    details += `Timestamp: ${deployment.timestamp ? toLocaleStringWithTimezone(deployment.timestamp) : 'N/A'}`;
     
     return details;
   };
