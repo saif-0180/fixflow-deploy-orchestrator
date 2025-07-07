@@ -564,7 +564,7 @@ def process_file_deployment(deployment_id):
       
     - name: Log copy result
       ansible.builtin.debug:
-        msg: "File copied successfully to {{ inventory_hostname }} (deployment by {logged_in_user})"
+        msg: "File copied successfully to {vms} (deployment by {logged_in_user})"
       when: copy_result.changed
 """)
         logger.debug(f"Created Ansible playbook: {playbook_file}")
@@ -1226,8 +1226,12 @@ def run_shell_command():
     # Start command execution in a separate thread
     threading.Thread(target=process_shell_command, args=(deployment_id,)).start()
     
-    logger.info(f"Shell command initiated with ID: {deployment_id}")
-    return jsonify({"deploymentId": deployment_id, "commandId": deployment_id})
+    logger.info(f"Shell command initiated by {current_user['username']} with ID: {deployment_id}")
+    return jsonify({
+        "deploymentId": deployment_id,
+        "initiatedBy": current_user['username'],
+        "commandId": deployment_id
+        })
 
 
 def process_shell_command(deployment_id):
@@ -1241,7 +1245,7 @@ def process_shell_command(deployment_id):
         user = deployment.get("user", "infadm")
         working_dir = deployment.get("working_dir", "")
         
-        log_message(deployment_id, f"Running command on {len(vms)} VMs: {command}")
+        log_message(deployment_id, f"Running command on {len(vms)} VMs: {command} initiated by {logged_in_user}")
         
         # Generate an ansible playbook for shell command
         playbook_file = f"/tmp/shell_command_{deployment_id}.yml"
@@ -1249,7 +1253,7 @@ def process_shell_command(deployment_id):
         # Enhanced playbook with proper variable handling
         with open(playbook_file, 'w') as f:
             f.write(f"""---
-- name: Run shell command on VMs
+- name: Run shell command on VMs (initiated by {logged_in_user})
   hosts: command_targets
   gather_facts: true
   become: {"true" if sudo else "false"}
@@ -1344,13 +1348,13 @@ def process_shell_command(deployment_id):
         process.wait()
         
         if process.returncode == 0:
-            log_message(deployment_id, "SUCCESS: Shell command executed successfully")
+            log_message(deployment_id, f"SUCCESS: Shell command executed successfully (initiated by {logged_in_user})")
             deployments[deployment_id]["status"] = "success"
-            logger.info(f"Shell command {deployment_id} completed successfully")
+            logger.info(f"Shell command {deployment_id} completed successfully (initiated by {logged_in_user})")
         else:
-            log_message(deployment_id, "ERROR: Shell command execution failed")
+            log_message(deployment_id, f"ERROR: Shell command execution failed (initiated by {logged_in_user})")
             deployments[deployment_id]["status"] = "failed"
-            logger.error(f"Shell command {deployment_id} failed with return code {process.returncode}")
+            logger.error(f"Shell command {deployment_id} failed with return code {process.returncode} (initiated by {logged_in_user})")
         
         # Clean up temporary files
         try:
@@ -2029,7 +2033,7 @@ def process_rollback(rollback_id):
     try:
         original_id = rollback["original_deployment"]
         vms = rollback["vms"]
-        logged_in_user = deployment["logged_in_user"]  # User who initiated
+        logged_in_user = rollback["logged_in_user"]  # User who initiated
         target_path = os.path.join(rollback["target_path"], rollback["file"])
         user = rollback["user"]
         sudo = rollback["sudo"]
@@ -2143,17 +2147,17 @@ def process_rollback(rollback_id):
         if overall_success:
             deployments[rollback_id]["status"] = "success"
             deployments[rollback_id]["backup_timestamp"] = timestamp
-            log_message(rollback_id, f"Rollback operation completed successfully on all VMs. Files backed up with timestamp: {timestamp}")
+            log_message(rollback_id, f"Rollback operation completed successfully on all VMs(initiated by {logged_in_user}) . Files backed up with timestamp: {timestamp}")
         else:
             deployments[rollback_id]["status"] = "failed"
             if failed_vms:
-                log_message(rollback_id, f"Rollback FAILED on VMs: {', '.join(failed_vms)}")
+                log_message(rollback_id, f"Rollback FAILED on VMs: {', '.join(failed_vms)} (initiated by {logged_in_user})")
             log_message(rollback_id, "Rollback operation completed with failures")
         
         save_deployment_history()
         
     except Exception as e:
-        log_message(rollback_id, f"ERROR: Exception during rollback: {str(e)}")
+        log_message(rollback_id, f"ERROR: Exception during rollback: {str(e)} (initiated by {logged_in_user})")
         deployments[rollback_id]["status"] = "failed"
         logger.exception(f"Exception in rollback {rollback_id}: {str(e)}")
         save_deployment_history()
@@ -2464,6 +2468,11 @@ def get_current_timestamp():
 
 @app.route('/api/systemd/<operation>', methods=['POST'])
 def systemd_operation(operation):
+    # Get current authenticated user
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({"error": "Authentication required"}), 401
+
     data = request.json
     operation = data.get('operation', operation).strip().lower()  # Use URL param or body param
     service = data.get('service')
@@ -2486,6 +2495,8 @@ def systemd_operation(operation):
         "type": "systemd",
         "service": service,
         "operation": operation,
+        "logged_in_user": current_user['username'],  # User who initiated the deployment
+        "user_role": current_user['role'],  # Role of the user who initiated
         "vms": vms,
         "status": "running",
         "timestamp": get_current_timestamp(),
@@ -2498,20 +2509,23 @@ def systemd_operation(operation):
     # Start systemd operation in a separate thread
     threading.Thread(target=process_systemd_operation, args=(deployment_id, operation, service, vms)).start()
     
-    logger.info(f"Systemd {operation} initiated with ID: {deployment_id}")
-    return jsonify({"deploymentId": deployment_id})
+    logger.info(f"Systemd {operation} initiated with ID: {deployment_id} initiated by {current_user['username']}")
+    return jsonify({"deploymentId": deployment_id, "initiatedBy": current_user['username']})
 
 
 def process_systemd_operation(deployment_id, operation, service, vms):
+    deployment = deployments[deployment_id]
     try:
-        log_message(deployment_id, f"Starting systemd {operation} for service '{service}' on {len(vms)} VMs")
+        logged_in_user = deployment["logged_in_user"]  # User who initiated
+        user = deployment.get("user", "infadm")
+        log_message(deployment_id, f"Starting systemd {operation} for service '{service}' on {len(vms)} VMs (initiated by {logged_in_user})")
         
         # Generate an ansible playbook for systemd operation
         playbook_file = f"/tmp/systemd_{deployment_id}.yml"
         
         with open(playbook_file, 'w') as f:
             f.write(f"""---
-- name: Systemd {operation} operation for {service}
+- name: Systemd {operation} operation for {service} (initiated by {logged_in_user})
   hosts: systemd_targets
   gather_facts: true
 #   become: true
@@ -2726,13 +2740,13 @@ def process_systemd_operation(deployment_id, operation, service, vms):
         
         # Check result and update status
         if result.returncode == 0:
-            log_message(deployment_id, f"SUCCESS: Systemd {operation} operation completed successfully")
+            log_message(deployment_id, f"SUCCESS: Systemd {operation} operation completed successfully (initiated by {logged_in_user})")
             deployments[deployment_id]["status"] = "completed"
-            logger.info(f"Systemd operation {deployment_id} completed successfully")
+            logger.info(f"Systemd operation {deployment_id} completed successfully (initiated by {logged_in_user})")
         else:
-            log_message(deployment_id, f"ERROR: Systemd {operation} operation failed with return code {result.returncode}")
+            log_message(deployment_id, f"ERROR: Systemd {operation} operation failed with return code {result.returncode} (initiated by {logged_in_user})")
             deployments[deployment_id]["status"] = "failed"
-            logger.error(f"Systemd operation {deployment_id} failed with return code {result.returncode}")
+            logger.error(f"Systemd operation {deployment_id} failed with return code {result.returncode} (initiated by {logged_in_user})")
         
         # Clean up temporary files
         try:
