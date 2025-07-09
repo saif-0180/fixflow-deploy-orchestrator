@@ -54,7 +54,7 @@ const DeployUsingTemplate: React.FC = () => {
       }
       return response.json();
     },
-    refetchInterval: 30000, // Refresh every 30 seconds
+    refetchInterval: 30000,
   });
 
   // Load specific template
@@ -82,9 +82,13 @@ const DeployUsingTemplate: React.FC = () => {
     },
   });
 
-  // Deploy using template
+  // Deploy using template with enhanced logging
   const deployMutation = useMutation({
     mutationFn: async (template: DeploymentTemplate) => {
+      console.log('Starting template deployment:', template.metadata.ft_number);
+      setLogs(prev => [...prev, `Starting template deployment for ${template.metadata.ft_number}...`]);
+      setDeploymentStatus('loading');
+      
       const response = await fetch('/api/deploy/template', {
         method: 'POST',
         headers: {
@@ -95,21 +99,29 @@ const DeployUsingTemplate: React.FC = () => {
           template: template
         }),
       });
+      
       if (!response.ok) {
-        throw new Error('Failed to start template deployment');
+        const errorData = await response.text();
+        console.error('Template deployment failed:', errorData);
+        throw new Error(`Failed to start template deployment: ${errorData}`);
       }
+      
       return response.json();
     },
     onSuccess: (data) => {
+      console.log('Template deployment started successfully:', data);
       setDeploymentId(data.deploymentId);
       setDeploymentStatus('running');
+      setLogs(prev => [...prev, `Template deployment initiated with ID: ${data.deploymentId}`]);
       toast({
         title: "Deployment Started",
         description: `Template deployment initiated with ID: ${data.deploymentId}`,
       });
     },
     onError: (error) => {
+      console.error('Template deployment error:', error);
       setDeploymentStatus('failed');
+      setLogs(prev => [...prev, `ERROR: ${error instanceof Error ? error.message : 'Unknown error'}`]);
       toast({
         title: "Deployment Failed",
         description: `Failed to start deployment: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -118,29 +130,63 @@ const DeployUsingTemplate: React.FC = () => {
     },
   });
 
-  // Fetch deployment logs
+  // Fetch deployment logs with enhanced polling
   const { data: deploymentLogs } = useQuery({
     queryKey: ['template-deployment-logs', deploymentId],
     queryFn: async () => {
       if (!deploymentId) return { logs: [], status: 'idle' };
       
+      console.log('Fetching deployment logs for:', deploymentId);
       const response = await fetch(`/api/deploy/template/${deploymentId}/logs`);
       if (!response.ok) {
+        console.error('Failed to fetch deployment logs:', await response.text());
         throw new Error('Failed to fetch deployment logs');
       }
-      return response.json();
+      const data = await response.json();
+      console.log('Received deployment logs:', data);
+      return data;
     },
-    enabled: !!deploymentId,
-    refetchInterval: 2000, // Poll every 2 seconds
+    enabled: !!deploymentId && deploymentStatus === 'running',
+    refetchInterval: (data) => {
+      // Stop polling if deployment is complete
+      const status = data?.status;
+      return (status === 'running' || status === 'loading') ? 2000 : false;
+    },
+    refetchIntervalInBackground: true,
   });
 
-  // Update logs and status from API
+  // Update logs and status from API with better handling
   useEffect(() => {
     if (deploymentLogs) {
-      setLogs(deploymentLogs.logs || []);
-      setDeploymentStatus(deploymentLogs.status || 'idle');
+      console.log('Updating logs from API:', deploymentLogs);
+      
+      // Only update if we have new logs
+      if (deploymentLogs.logs && Array.isArray(deploymentLogs.logs)) {
+        setLogs(deploymentLogs.logs);
+      }
+      
+      // Update status
+      if (deploymentLogs.status) {
+        const newStatus = deploymentLogs.status;
+        console.log('Updating deployment status to:', newStatus);
+        setDeploymentStatus(newStatus);
+        
+        // Show completion notification
+        if (newStatus === 'success') {
+          toast({
+            title: "Deployment Completed",
+            description: "Template deployment completed successfully!",
+          });
+        } else if (newStatus === 'failed') {
+          toast({
+            title: "Deployment Failed",
+            description: "Template deployment failed. Check logs for details.",
+            variant: "destructive",
+          });
+        }
+      }
     }
-  }, [deploymentLogs]);
+  }, [deploymentLogs, toast]);
 
   const handleLoadTemplate = () => {
     if (!selectedFt) {
@@ -151,6 +197,7 @@ const DeployUsingTemplate: React.FC = () => {
       });
       return;
     }
+    console.log('Loading template for:', selectedFt);
     loadTemplateMutation.mutate(selectedFt);
   };
 
@@ -163,6 +210,11 @@ const DeployUsingTemplate: React.FC = () => {
       });
       return;
     }
+    
+    console.log('Starting deployment with template:', loadedTemplate);
+    // Reset logs and status for new deployment
+    setLogs([]);
+    setDeploymentId(null);
     deployMutation.mutate(loadedTemplate);
   };
 
@@ -224,6 +276,21 @@ const DeployUsingTemplate: React.FC = () => {
               >
                 {deployMutation.isPending || deploymentStatus === 'running' ? "Deploying..." : "Deploy"}
               </Button>
+
+              {deploymentStatus !== 'idle' && (
+                <div className="mt-4 p-3 bg-[#2A4759]/50 rounded-md">
+                  <div className="text-sm text-[#EEEEEE]">
+                    <div>Status: <span className={`font-medium ${
+                      deploymentStatus === 'success' ? 'text-green-400' : 
+                      deploymentStatus === 'failed' ? 'text-red-400' : 
+                      deploymentStatus === 'running' ? 'text-yellow-400' : 'text-gray-400'
+                    }`}>
+                      {deploymentStatus.toUpperCase()}
+                    </span></div>
+                    {deploymentId && <div>ID: {deploymentId}</div>}
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -246,7 +313,7 @@ const DeployUsingTemplate: React.FC = () => {
           </Card>
         </div>
 
-        {/* Right Column - Logs */}
+        {/* Right Column - Enhanced Logs */}
         <div className="xl:col-span-1">
           <LogDisplay
             logs={logs}

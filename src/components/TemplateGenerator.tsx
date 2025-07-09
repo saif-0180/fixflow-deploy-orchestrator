@@ -5,11 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { Trash2, Plus, Download, Upload, RefreshCw } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import LogDisplay from './LogDisplay';
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 const TemplateGenerator = () => {
   const { toast } = useToast();
@@ -19,7 +18,6 @@ const TemplateGenerator = () => {
   const [ftNumber, setFtNumber] = useState('');
   const [steps, setSteps] = useState([]);
   const [generatedTemplate, setGeneratedTemplate] = useState(null);
-  const [logs, setLogs] = useState([]);
   
   // Saved templates state
   const [savedTemplates, setSavedTemplates] = useState([]);
@@ -220,12 +218,6 @@ const TemplateGenerator = () => {
     };
 
     setGeneratedTemplate(template);
-    setLogs([
-      `Template "${templateName}" generated successfully`,
-      `FT Number: ${ftNumber}`,
-      `Steps: ${steps.length}`,
-      'Template is ready for deployment or saving'
-    ]);
 
     toast({
       title: "Template Generated",
@@ -393,11 +385,16 @@ const TemplateGenerator = () => {
             <div>
               <Label>Target VMs</Label>
               <Select
-                value={step.targetVMs?.join(', ') || ''}
-                onValueChange={(value) => updateStep(step.id, 'targetVMs', value ? [value] : [])}
+                value=""
+                onValueChange={(value) => {
+                  const currentVMs = step.targetVMs || [];
+                  if (!currentVMs.includes(value)) {
+                    updateStep(step.id, 'targetVMs', [...currentVMs, value]);
+                  }
+                }}
               >
                 <SelectTrigger className="bg-[#2A4759] text-[#EEEEEE] border-[#EEEEEE]/30">
-                  <SelectValue placeholder={isLoadingVms ? "Loading VMs..." : "Select VMs"} />
+                  <SelectValue placeholder={isLoadingVms ? "Loading VMs..." : "Add VM"} />
                 </SelectTrigger>
                 <SelectContent className="bg-[#2A4759] text-[#EEEEEE] border-[#EEEEEE]/30">
                   {vmsData.vms?.map((vm) => (
@@ -405,6 +402,27 @@ const TemplateGenerator = () => {
                   ))}
                 </SelectContent>
               </Select>
+              {step.targetVMs && step.targetVMs.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {step.targetVMs.map((vm) => (
+                    <span 
+                      key={vm}
+                      className="inline-flex items-center gap-1 px-2 py-1 bg-[#F79B72] text-[#2A4759] text-xs rounded-md"
+                    >
+                      {vm}
+                      <button
+                        onClick={() => {
+                          const updatedVMs = step.targetVMs.filter(v => v !== vm);
+                          updateStep(step.id, 'targetVMs', updatedVMs);
+                        }}
+                        className="hover:bg-[#2A4759]/20 rounded-full p-0.5"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         );
@@ -432,11 +450,16 @@ const TemplateGenerator = () => {
             <div>
               <Label>Select SQL Files</Label>
               <Select
-                value={step.files?.join(', ') || ''}
-                onValueChange={(value) => updateStep(step.id, 'files', value ? [value] : [])}
+                value=""
+                onValueChange={(value) => {
+                  const currentFiles = step.files || [];
+                  if (!currentFiles.includes(value)) {
+                    updateStep(step.id, 'files', [...currentFiles, value]);
+                  }
+                }}
               >
                 <SelectTrigger className="bg-[#2A4759] text-[#EEEEEE] border-[#EEEEEE]/30">
-                  <SelectValue placeholder={isLoadingFiles ? "Loading files..." : "Select SQL files"} />
+                  <SelectValue placeholder={isLoadingFiles ? "Loading files..." : "Add SQL file"} />
                 </SelectTrigger>
                 <SelectContent className="bg-[#2A4759] text-[#EEEEEE] border-[#EEEEEE]/30">
                   {availableFiles.filter(file => file.endsWith('.sql')).map((file) => (
@@ -444,6 +467,27 @@ const TemplateGenerator = () => {
                   ))}
                 </SelectContent>
               </Select>
+              {step.files && step.files.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {step.files.map((file) => (
+                    <span 
+                      key={file}
+                      className="inline-flex items-center gap-1 px-2 py-1 bg-[#F79B72] text-[#2A4759] text-xs rounded-md"
+                    >
+                      {file}
+                      <button
+                        onClick={() => {
+                          const updatedFiles = step.files.filter(f => f !== file);
+                          updateStep(step.id, 'files', updatedFiles);
+                        }}
+                        className="hover:bg-[#2A4759]/20 rounded-full p-0.5"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -488,7 +532,6 @@ const TemplateGenerator = () => {
                 value={step.dbPassword || ''}
                 onChange={(e) => {
                   const password = e.target.value;
-                  // Store as base64 encoded in the step
                   const encodedPassword = password ? btoa(password) : '';
                   updateStep(step.id, 'dbPassword', encodedPassword);
                 }}
@@ -541,11 +584,16 @@ const TemplateGenerator = () => {
             <div>
               <Label>Target VMs</Label>
               <Select
-                value={step.targetVMs?.join(', ') || ''}
-                onValueChange={(value) => updateStep(step.id, 'targetVMs', value ? [value] : [])}
+                value=""
+                onValueChange={(value) => {
+                  const currentVMs = step.targetVMs || [];
+                  if (!currentVMs.includes(value)) {
+                    updateStep(step.id, 'targetVMs', [...currentVMs, value]);
+                  }
+                }}
               >
                 <SelectTrigger className="bg-[#2A4759] text-[#EEEEEE] border-[#EEEEEE]/30">
-                  <SelectValue placeholder={isLoadingVms ? "Loading VMs..." : "Select VMs"} />
+                  <SelectValue placeholder={isLoadingVms ? "Loading VMs..." : "Add VM"} />
                 </SelectTrigger>
                 <SelectContent className="bg-[#2A4759] text-[#EEEEEE] border-[#EEEEEE]/30">
                   {vmsData.vms?.map((vm) => (
@@ -553,6 +601,27 @@ const TemplateGenerator = () => {
                   ))}
                 </SelectContent>
               </Select>
+              {step.targetVMs && step.targetVMs.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {step.targetVMs.map((vm) => (
+                    <span 
+                      key={vm}
+                      className="inline-flex items-center gap-1 px-2 py-1 bg-[#F79B72] text-[#2A4759] text-xs rounded-md"
+                    >
+                      {vm}
+                      <button
+                        onClick={() => {
+                          const updatedVMs = step.targetVMs.filter(v => v !== vm);
+                          updateStep(step.id, 'targetVMs', updatedVMs);
+                        }}
+                        className="hover:bg-[#2A4759]/20 rounded-full p-0.5"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         );
@@ -610,9 +679,9 @@ const TemplateGenerator = () => {
 
   return (
     <div className="min-h-screen bg-[#0A1929] p-6">
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-        {/* Left Column - 3 blocks */}
-        <div className="lg:col-span-3 space-y-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full">
+        {/* Left Column */}
+        <div className="space-y-6">
           {/* Template Configuration */}
           <Card className="bg-[#1a2b42] text-[#EEEEEE] border-2 border-[#EEEEEE]/30">
             <CardHeader>
@@ -660,58 +729,6 @@ const TemplateGenerator = () => {
             </CardContent>
           </Card>
 
-          {/* Deployment Steps */}
-          <Card className="bg-[#1a2b42] text-[#EEEEEE] border-2 border-[#EEEEEE]/30">
-            <CardHeader>
-              <div className="flex justify-between items-center">
-                <CardTitle className="text-[#F79B72]">Deployment Steps</CardTitle>
-                <Button onClick={addStep} size="sm" className="bg-[#F79B72] text-[#2A4759] hover:bg-[#F79B72]/80">
-                  <Plus className="h-4 w-4 mr-1" />
-                  Add Step
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4 max-h-96 overflow-y-auto">
-              {steps.map((step) => (
-                <Card key={step.id} className="bg-[#2A4759] border-[#EEEEEE]/20">
-                  <CardHeader className="pb-2">
-                    <div className="flex justify-between items-center">
-                      <h4 className="text-sm font-medium text-[#F79B72]">Step {step.order}</h4>
-                      <Button
-                        onClick={() => removeStep(step.id)}
-                        size="sm"
-                        variant="ghost"
-                        className="text-red-400 hover:text-red-300 hover:bg-red-900/20"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="pt-0">
-                    {renderStepConfiguration(step)}
-                  </CardContent>
-                </Card>
-              ))}
-              {steps.length === 0 && (
-                <div className="text-center text-gray-400 py-8">
-                  <p>No steps configured yet.</p>
-                  <p className="text-sm">Click "Add Step" to get started.</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Template Generation Logs */}
-          <LogDisplay 
-            logs={logs} 
-            title="Template Generation Logs" 
-            height="300px"
-            status="idle"
-          />
-        </div>
-
-        {/* Right Column - 2 blocks */}
-        <div className="lg:col-span-2 space-y-6">
           {/* Saved Templates */}
           <Card className="bg-[#1a2b42] text-[#EEEEEE] border-2 border-[#EEEEEE]/30">
             <CardHeader>
@@ -758,8 +775,55 @@ const TemplateGenerator = () => {
             </CardContent>
           </Card>
 
-          {/* Generated Template Display */}
-          <Card className="bg-[#1a2b42] text-[#EEEEEE] border-2 border-[#EEEEEE]/30" style={{ height: 'calc(100vh - 400px)' }}>
+          {/* Deployment Steps */}
+          <Card className="bg-[#1a2b42] text-[#EEEEEE] border-2 border-[#EEEEEE]/30 flex-1">
+            <CardHeader>
+              <div className="flex justify-between items-center">
+                <CardTitle className="text-[#F79B72]">Deployment Steps</CardTitle>
+                <Button onClick={addStep} size="sm" className="bg-[#F79B72] text-[#2A4759] hover:bg-[#F79B72]/80">
+                  <Plus className="h-4 w-4 mr-1" />
+                  Add Step
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="flex-1">
+              <ScrollArea className="h-96">
+                <div className="space-y-4 pr-4">
+                  {steps.map((step) => (
+                    <Card key={step.id} className="bg-[#2A4759] border-[#EEEEEE]/20">
+                      <CardHeader className="pb-2">
+                        <div className="flex justify-between items-center">
+                          <h4 className="text-sm font-medium text-[#F79B72]">Step {step.order}</h4>
+                          <Button
+                            onClick={() => removeStep(step.id)}
+                            size="sm"
+                            variant="ghost"
+                            className="text-red-400 hover:text-red-300 hover:bg-red-900/20"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="pt-0">
+                        {renderStepConfiguration(step)}
+                      </CardContent>
+                    </Card>
+                  ))}
+                  {steps.length === 0 && (
+                    <div className="text-center text-gray-400 py-8">
+                      <p>No steps configured yet.</p>
+                      <p className="text-sm">Click "Add Step" to get started.</p>
+                    </div>
+                  )}
+                </div>
+              </ScrollArea>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Right Column - Generated Template Display */}
+        <div className="space-y-6">
+          <Card className="bg-[#1a2b42] text-[#EEEEEE] border-2 border-[#EEEEEE]/30 h-full">
             <CardHeader>
               <div className="flex justify-between items-center">
                 <CardTitle className="text-[#F79B72]">Generated Template</CardTitle>
@@ -783,13 +847,15 @@ const TemplateGenerator = () => {
                 )}
               </div>
             </CardHeader>
-            <CardContent className="flex-1 overflow-hidden">
+            <CardContent className="flex-1 h-full">
               {generatedTemplate ? (
-                <div className="bg-[#0A1929] rounded-md p-4 h-full overflow-auto">
-                  <pre className="text-sm text-gray-300 whitespace-pre-wrap">
-                    {JSON.stringify(generatedTemplate, null, 2)}
-                  </pre>
-                </div>
+                <ScrollArea className="h-full">
+                  <div className="bg-[#0A1929] rounded-md p-4">
+                    <pre className="text-sm text-gray-300 whitespace-pre-wrap">
+                      {JSON.stringify(generatedTemplate, null, 2)}
+                    </pre>
+                  </div>
+                </ScrollArea>
               ) : (
                 <div className="text-center text-gray-400 h-full flex items-center justify-center">
                   <div>
