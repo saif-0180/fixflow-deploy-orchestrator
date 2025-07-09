@@ -17,7 +17,7 @@ const SystemctlOperations = () => {
   const [operation, setOperation] = useState<string>('status');
   const [logs, setLogs] = useState<string[]>([]);
   const [deploymentId, setDeploymentId] = useState<string | null>(null);
-  const [status, setStatus] = useState<'idle' | 'loading' | 'running' | 'success' | 'failed' | 'timeout'>('idle');
+  const [status, setStatus] = useState<'idle' | 'loading' | 'running' | 'success' | 'failed' | 'completed'>('idle');
   const { user } = useAuth();
   
   // Use ref to store cleanup function
@@ -167,7 +167,7 @@ const SystemctlOperations = () => {
           if (pollCount >= maxPollCount) {
             console.log('Polling timeout reached');
             clearInterval(pollInterval);
-            setStatus('timeout');
+            setStatus('failed');
             setLogs(prev => [...prev, '⚠️ Operation timed out after 60 seconds']);
           }
           

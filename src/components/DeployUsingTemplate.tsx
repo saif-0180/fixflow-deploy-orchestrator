@@ -159,11 +159,7 @@ const DeployUsingTemplate: React.FC = () => {
       return data;
     },
     enabled: !!deploymentId && deploymentStatus === 'running',
-    refetchInterval: (data) => {
-      // Stop polling if deployment is complete
-      const status = data?.status;
-      return (status === 'running' || status === 'loading') ? 2000 : false;
-    },
+    refetchInterval: deploymentStatus === 'running' ? 2000 : false,
     refetchIntervalInBackground: true,
   });
 

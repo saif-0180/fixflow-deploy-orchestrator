@@ -29,10 +29,14 @@ def save_template():
     try:
         data = request.get_json()
         template = data.get('template')
-        name = data.get('name')
+        ft_number = data.get('ft_number')
+        name = data.get('name', ft_number)  # Use ft_number as name if not provided
         
-        if not template or not name:
-            return jsonify({'error': 'Template and name are required'}), 400
+        if not template:
+            return jsonify({'error': 'Template is required'}), 400
+        
+        if not name and not ft_number:
+            return jsonify({'error': 'Template name or FT number is required'}), 400
         
         # Add metadata if not present
         if 'metadata' not in template:
