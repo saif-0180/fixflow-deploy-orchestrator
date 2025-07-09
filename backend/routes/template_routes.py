@@ -1,164 +1,111 @@
 
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, request, jsonify, g
 import json
 import os
-import logging
 from datetime import datetime
+from .auth_routes import get_current_user
 
 template_bp = Blueprint('template', __name__)
 
-# Get logger
-logger = logging.getLogger('fix_deployment_orchestrator')
-
-# Template storage directory
 TEMPLATES_DIR = '/app/deployment_templates'
 
-def ensure_templates_directory():
-    """Ensure the templates directory exists"""
-    os.makedirs(TEMPLATES_DIR, exist_ok=True)
-    logger.info(f"Templates directory ensured: {TEMPLATES_DIR}")
+# Ensure templates directory exists
+os.makedirs(TEMPLATES_DIR, exist_ok=True)
+
+def require_auth():
+    """Check if user is authenticated"""
+    user = get_current_user()
+    if not user:
+        return jsonify({'error': 'Authentication required'}), 401
+    return None
 
 @template_bp.route('/api/templates/save', methods=['POST'])
 def save_template():
     """Save a deployment template"""
+    auth_error = require_auth()
+    if auth_error:
+        return auth_error
+    
     try:
-        ensure_templates_directory()
-        
         data = request.get_json()
         template = data.get('template')
-        name = data.get('name', 'template')
+        name = data.get('name')
         
-        if not template:
-            return jsonify({'error': 'No template provided'}), 400
+        if not template or not name:
+            return jsonify({'error': 'Template and name are required'}), 400
         
-        # Ensure the name ends with .json
-        if not name.endswith('.json'):
-            name += '.json'
+        # Add metadata if not present
+        if 'metadata' not in template:
+            template['metadata'] = {}
         
-        # Save template to file
-        template_path = os.path.join(TEMPLATES_DIR, name)
+        template['metadata']['saved_at'] = datetime.now().isoformat()
+        template['metadata']['saved_by'] = get_current_user()['username']
         
-        with open(template_path, 'w') as f:
+        # Save to file
+        filename = f"{name}.json"
+        filepath = os.path.join(TEMPLATES_DIR, filename)
+        
+        with open(filepath, 'w') as f:
             json.dump(template, f, indent=2)
         
-        logger.info(f"Template saved: {template_path}")
-        
-        return jsonify({
-            'message': 'Template saved successfully',
-            'path': template_path,
-            'name': name
-        })
+        return jsonify({'message': 'Template saved successfully', 'filename': filename})
         
     except Exception as e:
-        logger.exception(f"Error saving template: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        print(f"Error saving template: {str(e)}")
+        return jsonify({'error': f'Failed to save template: {str(e)}'}), 500
 
 @template_bp.route('/api/templates/list', methods=['GET'])
 def list_templates():
-    """List available deployment templates"""
+    """List all saved templates"""
     try:
-        ensure_templates_directory()
-        
         templates = []
         if os.path.exists(TEMPLATES_DIR):
-            for file in os.listdir(TEMPLATES_DIR):
-                if file.endswith('.json'):
-                    templates.append(file.replace('.json', ''))
+            for filename in os.listdir(TEMPLATES_DIR):
+                if filename.endswith('.json'):
+                    templates.append(filename.replace('.json', ''))
         
-        logger.info(f"Listed {len(templates)} templates")
         return jsonify(templates)
         
     except Exception as e:
-        logger.exception(f"Error listing templates: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        print(f"Error listing templates: {str(e)}")
+        return jsonify({'error': f'Failed to list templates: {str(e)}'}), 500
 
 @template_bp.route('/api/templates/<template_name>', methods=['GET'])
 def get_template(template_name):
     """Get a specific template"""
     try:
-        ensure_templates_directory()
+        filename = f"{template_name}.json"
+        filepath = os.path.join(TEMPLATES_DIR, filename)
         
-        # Ensure the name ends with .json
-        if not template_name.endswith('.json'):
-            template_name += '.json'
-        
-        template_path = os.path.join(TEMPLATES_DIR, template_name)
-        
-        if not os.path.exists(template_path):
+        if not os.path.exists(filepath):
             return jsonify({'error': 'Template not found'}), 404
         
-        with open(template_path, 'r') as f:
+        with open(filepath, 'r') as f:
             template = json.load(f)
         
-        logger.info(f"Template loaded: {template_path}")
         return jsonify(template)
         
     except Exception as e:
-        logger.exception(f"Error loading template: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        print(f"Error loading template: {str(e)}")
+        return jsonify({'error': f'Failed to load template: {str(e)}'}), 500
 
 @template_bp.route('/api/templates/<template_name>', methods=['DELETE'])
 def delete_template(template_name):
     """Delete a template"""
+    auth_error = require_auth()
+    if auth_error:
+        return auth_error
+    
     try:
-        ensure_templates_directory()
+        filename = f"{template_name}.json"
+        filepath = os.path.join(TEMPLATES_DIR, filename)
         
-        # Ensure the name ends with .json
-        if not template_name.endswith('.json'):
-            template_name += '.json'
-        
-        template_path = os.path.join(TEMPLATES_DIR, template_name)
-        
-        if not os.path.exists(template_path):
+        if not os.path.exists(filepath):
             return jsonify({'error': 'Template not found'}), 404
         
-        os.remove(template_path)
-        logger.info(f"Template deleted: {template_path}")
-        
+        os.remove(filepath)
         return jsonify({'message': 'Template deleted successfully'})
         
     except Exception as e:
-        logger.exception(f"Error deleting template: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-@template_bp.route('/api/fts', methods=['GET'])
-def get_fts():
-    """Get available FT numbers"""
-    try:
-        fix_files_dir = '/app/fixfiles/AllFts'
-        fts = []
-        
-        if os.path.exists(fix_files_dir):
-            for item in os.listdir(fix_files_dir):
-                item_path = os.path.join(fix_files_dir, item)
-                if os.path.isdir(item_path):
-                    fts.append(item)
-        
-        fts.sort()
-        logger.info(f"Found {len(fts)} FT numbers")
-        return jsonify(fts)
-        
-    except Exception as e:
-        logger.exception(f"Error getting FT numbers: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-@template_bp.route('/api/files/<ft_number>', methods=['GET'])
-def get_ft_files(ft_number):
-    """Get files for a specific FT number"""
-    try:
-        ft_dir = os.path.join('/app/fixfiles/AllFts', ft_number)
-        files = []
-        
-        if os.path.exists(ft_dir):
-            for item in os.listdir(ft_dir):
-                item_path = os.path.join(ft_dir, item)
-                if os.path.isfile(item_path):
-                    files.append(item)
-        
-        files.sort()
-        logger.info(f"Found {len(files)} files for FT {ft_number}")
-        return jsonify(files)
-        
-    except Exception as e:
-        logger.exception(f"Error getting files for FT {ft_number}: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        print(f"Error deleting template: {str(e)}")
+        return jsonify({'error': f'Failed to delete template: {str(e)}'}), 500

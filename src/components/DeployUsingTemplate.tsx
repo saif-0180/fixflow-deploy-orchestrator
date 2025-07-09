@@ -89,10 +89,17 @@ const DeployUsingTemplate: React.FC = () => {
       setLogs(prev => [...prev, `Starting template deployment for ${template.metadata.ft_number}...`]);
       setDeploymentStatus('loading');
       
+      // Get the token from localStorage
+      const token = localStorage.getItem('authToken');
+      if (!token) {
+        throw new Error('Authentication required. Please log in.');
+      }
+      
       const response = await fetch('/api/deploy/template', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({
           ft_number: template.metadata.ft_number,
@@ -137,7 +144,12 @@ const DeployUsingTemplate: React.FC = () => {
       if (!deploymentId) return { logs: [], status: 'idle' };
       
       console.log('Fetching deployment logs for:', deploymentId);
-      const response = await fetch(`/api/deploy/template/${deploymentId}/logs`);
+      const token = localStorage.getItem('authToken');
+      const response = await fetch(`/api/deploy/template/${deploymentId}/logs`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
       if (!response.ok) {
         console.error('Failed to fetch deployment logs:', await response.text());
         throw new Error('Failed to fetch deployment logs');

@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, Plus, Download, Upload, RefreshCw } from "lucide-react";
+import { Trash2, Plus, Download, Upload, RefreshCw, Save } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
@@ -184,6 +184,56 @@ const TemplateGenerator = () => {
     ));
   };
 
+  const getRelevantStepFields = (step) => {
+    // Return only relevant fields based on step type
+    const baseFields = {
+      order: step.order,
+      type: step.type,
+      description: step.description,
+      id: step.id
+    };
+
+    switch (step.type) {
+      case 'file_deployment':
+        return {
+          ...baseFields,
+          ftNumber: step.ftNumber,
+          files: step.files,
+          targetPath: step.targetPath,
+          targetUser: step.targetUser,
+          targetVMs: step.targetVMs
+        };
+      case 'sql_deployment':
+        return {
+          ...baseFields,
+          ftNumber: step.ftNumber,
+          files: step.files,
+          dbConnection: step.dbConnection,
+          dbUser: step.dbUser,
+          dbPassword: step.dbPassword
+        };
+      case 'service_restart':
+        return {
+          ...baseFields,
+          service: step.service,
+          operation: step.operation,
+          targetVMs: step.targetVMs
+        };
+      case 'ansible_playbook':
+        return {
+          ...baseFields,
+          playbook: step.playbook
+        };
+      case 'helm_upgrade':
+        return {
+          ...baseFields,
+          helmDeploymentType: step.helmDeploymentType
+        };
+      default:
+        return baseFields;
+    }
+  };
+
   const generateTemplate = () => {
     if (!templateName || !ftNumber || steps.length === 0) {
       toast({
@@ -193,6 +243,9 @@ const TemplateGenerator = () => {
       });
       return;
     }
+
+    // Filter steps to include only relevant fields for each type
+    const filteredSteps = steps.map(step => getRelevantStepFields(step));
 
     const template = {
       metadata: {
@@ -204,12 +257,7 @@ const TemplateGenerator = () => {
         targetUser: steps.find(step => step.targetUser)?.targetUser,
         service: steps.find(step => step.service)?.service
       },
-      steps: steps.map(step => ({
-        order: step.order,
-        type: step.type,
-        description: step.description,
-        ...step
-      })),
+      steps: filteredSteps,
       dependencies: steps.map((step, index) => ({
         step: step.order,
         depends_on: index > 0 ? [steps[index - 1].order] : [],
@@ -236,10 +284,12 @@ const TemplateGenerator = () => {
     }
 
     try {
+      const token = localStorage.getItem('authToken');
       const response = await fetch('/api/templates/save', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({ 
           template: generatedTemplate,
@@ -333,11 +383,16 @@ const TemplateGenerator = () => {
             <div>
               <Label>Select Files</Label>
               <Select
-                value={step.files?.join(', ') || ''}
-                onValueChange={(value) => updateStep(step.id, 'files', value ? [value] : [])}
+                value=""
+                onValueChange={(value) => {
+                  const currentFiles = step.files || [];
+                  if (!currentFiles.includes(value)) {
+                    updateStep(step.id, 'files', [...currentFiles, value]);
+                  }
+                }}
               >
                 <SelectTrigger className="bg-[#2A4759] text-[#EEEEEE] border-[#EEEEEE]/30">
-                  <SelectValue placeholder={isLoadingFiles ? "Loading files..." : "Select files"} />
+                  <SelectValue placeholder={isLoadingFiles ? "Loading files..." : "Add file"} />
                 </SelectTrigger>
                 <SelectContent className="bg-[#2A4759] text-[#EEEEEE] border-[#EEEEEE]/30">
                   {availableFiles.map((file) => (
@@ -345,6 +400,27 @@ const TemplateGenerator = () => {
                   ))}
                 </SelectContent>
               </Select>
+              {step.files && step.files.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {step.files.map((file) => (
+                    <span 
+                      key={file}
+                      className="inline-flex items-center gap-1 px-2 py-1 bg-[#F79B72] text-[#2A4759] text-xs rounded-md"
+                    >
+                      {file}
+                      <button
+                        onClick={() => {
+                          const updatedFiles = step.files.filter(f => f !== file);
+                          updateStep(step.id, 'files', updatedFiles);
+                        }}
+                        className="hover:bg-[#2A4759]/20 rounded-full p-0.5"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -718,13 +794,6 @@ const TemplateGenerator = () => {
                 >
                   Generate Template
                 </Button>
-                <Button
-                  onClick={saveTemplate}
-                  disabled={!generatedTemplate}
-                  className="flex-1 bg-green-600 text-white hover:bg-green-700"
-                >
-                  Save Template
-                </Button>
               </div>
             </CardContent>
           </Card>
@@ -738,7 +807,7 @@ const TemplateGenerator = () => {
                   onClick={loadSavedTemplates} 
                   size="sm" 
                   variant="outline"
-                  className="border-[#EEEEEE]/30 text-[#EEEEEE] hover:bg-[#2A4759]"
+                  className="border-[#F79B72] text-[#F79B72] hover:bg-[#F79B72] hover:text-[#2A4759]"
                 >
                   <RefreshCw className="h-4 w-4 mr-1" />
                   Refresh
@@ -827,29 +896,40 @@ const TemplateGenerator = () => {
             <CardHeader>
               <div className="flex justify-between items-center">
                 <CardTitle className="text-[#F79B72]">Generated Template</CardTitle>
-                {generatedTemplate && (
+                <div className="flex gap-2">
                   <Button
-                    onClick={() => {
-                      const dataStr = JSON.stringify(generatedTemplate, null, 2);
-                      const dataBlob = new Blob([dataStr], { type: 'application/json' });
-                      const url = URL.createObjectURL(dataBlob);
-                      const link = document.createElement('a');
-                      link.href = url;
-                      link.download = `${templateName}.json`;
-                      link.click();
-                    }}
+                    onClick={saveTemplate}
+                    disabled={!generatedTemplate}
                     size="sm"
-                    className="bg-blue-600 text-white hover:bg-blue-700"
+                    className="bg-green-600 text-white hover:bg-green-700"
                   >
-                    <Download className="h-4 w-4 mr-1" />
-                    Export
+                    <Save className="h-4 w-4 mr-1" />
+                    Save
                   </Button>
-                )}
+                  {generatedTemplate && (
+                    <Button
+                      onClick={() => {
+                        const dataStr = JSON.stringify(generatedTemplate, null, 2);
+                        const dataBlob = new Blob([dataStr], { type: 'application/json' });
+                        const url = URL.createObjectURL(dataBlob);
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.download = `${templateName}.json`;
+                        link.click();
+                      }}
+                      size="sm"
+                      className="bg-blue-600 text-white hover:bg-blue-700"
+                    >
+                      <Download className="h-4 w-4 mr-1" />
+                      Export
+                    </Button>
+                  )}
+                </div>
               </div>
             </CardHeader>
             <CardContent className="flex-1 h-full">
               {generatedTemplate ? (
-                <ScrollArea className="h-full">
+                <ScrollArea className="h-[600px]">
                   <div className="bg-[#0A1929] rounded-md p-4">
                     <pre className="text-sm text-gray-300 whitespace-pre-wrap">
                       {JSON.stringify(generatedTemplate, null, 2)}
